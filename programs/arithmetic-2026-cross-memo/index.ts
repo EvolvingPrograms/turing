@@ -60,6 +60,12 @@ await runProgram(defineProgram({
     ["123456", "789012"],
     ["13579246", "8642"],
     ["1234567890", "9876543210"],
+    // 20-dig × 20-dig — 10 base-100 cells per operand. At TAPE_CHUNK=8 this
+    // crosses the single-line tape threshold (10 cells = 2 lines), so the
+    // model sees what a multi-line REFRESH looks like in training. Without
+    // this, the model extrapolates poorly from 1-line tapes to 8-line ones
+    // at large operand sizes and tends to collapse them back to a single line.
+    ["12345678901234567890", "98765432109876543210"],
   ],
   generateTestInputs: (opts) => {
     const extra = opts?.extra ?? []

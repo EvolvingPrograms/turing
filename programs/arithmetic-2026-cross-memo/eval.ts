@@ -21,7 +21,11 @@ import { fromPositional } from "../encoding"
 
 type CellTape = number[]
 
-const TAPE_CHUNK = 4  // cells per line in the tape display (attention width)
+// Cells per line in tape display. Wider lines = fewer lines per tape, which
+// matters for REFRESH reliability: the model can't count 16+ structurally-
+// identical lines accurately. With TAPE_CHUNK=8, a 64-cell tape is 8 lines;
+// each REFRESH is ~17 lines total (A + B + markers), within counting range.
+const TAPE_CHUNK = 8
 
 export function makeMultiply(chunk: number) {
   if (!Number.isInteger(chunk) || chunk < 1 || chunk > 6) {
@@ -74,10 +78,30 @@ export function makeMultiply(chunk: number) {
     const out: CellTape = []
     let carry = 0
 
-    log(tapeFmt(A, "A"))
-    log(tapeFmt(B, "B"))
+    // REFRESH every REFRESH_INTERVAL iterations. Each iteration emits an
+    // explicit `tick=N [FIRE|SKIP]` line *before* the k= header. tick cycles
+    // 0..REFRESH_INTERVAL-1. When tick=0 the action is [FIRE] and a REFRESH
+    // block follows; otherwise the action is [SKIP] and the iteration proceeds
+    // directly to its k= header.
+    //
+    // The point: the model never has to internally track "is this a refresh
+    // iteration." Every iteration tells the model its own action explicitly.
+    // Cycle position is bounded (0..7) and incremented one-at-a-time. This
+    // is the deterministic-single-direction principle applied to the refresh
+    // trigger.
+    const REFRESH_INTERVAL = 8
 
     for (let k = 0; k < N + M - 1; k++) {
+      const tick = k % REFRESH_INTERVAL
+      if (tick === 0) {
+        log(`tick=${tick} [FIRE]`)
+        log("REFRESH")
+        log(tapeFmt(A, "A"))
+        log(tapeFmt(B, "B"))
+        log("END_REFRESH")
+      } else {
+        log(`tick=${tick} [SKIP]`)
+      }
       log(`k=${k}`)
 
       const pairs: Array<[number, number]> = []
@@ -95,6 +119,18 @@ export function makeMultiply(chunk: number) {
           return { i, j, av: A[i], bv: B[j], prod: A[i] * B[j] }
         }
 
+        // Make every addition step explicit on the line: pair sum
+        // (prod1+prod2) and running sum (prev+pair) are each shown as
+        // separate 2-operand equations. The model never has to compute
+        // an implicit intermediate — each value it writes is verifiable
+        // against the operands on the same line. The previous running
+        // sum is always visible (it's the last `=N` on the previous
+        // line) so the model only attends 1 line back for it.
+        // Every line ends with `sum=<current_running_sum>` — uniform format
+        // so the model can find the running sum on ANY line by looking at
+        // the trailing `sum=...`. Removes the variance where "sum=N appears
+        // only on certain lines"; the previous format had the model
+        // misplacing the annotation by the time the trace got long.
         while (p < pairs.length) {
           if (p + 1 < pairs.length) {
             const a = emitProduct(p)
@@ -103,10 +139,11 @@ export function makeMultiply(chunk: number) {
             const lhs = `A${a.i}_${padCell(a.av)}*B${a.j}_${padCell(a.bv)}=${a.prod} A${b.i}_${padCell(b.av)}*B${b.j}_${padCell(b.bv)}=${b.prod}`
             if (p === 0) {
               sum = pairSum
-              log(`${lhs} sum=${pairSum}`)
+              log(`${lhs} ${a.prod}+${b.prod}=${pairSum} sum=${pairSum}`)
             } else {
-              const newSum = sum + pairSum
-              log(`${lhs} sum+${pairSum}=${newSum}`)
+              const prev = sum
+              const newSum = prev + pairSum
+              log(`${lhs} ${a.prod}+${b.prod}=${pairSum} ${prev}+${pairSum}=${newSum} sum=${newSum}`)
               sum = newSum
             }
             p += 2
@@ -117,8 +154,9 @@ export function makeMultiply(chunk: number) {
               sum = a.prod
               log(`${lhs} sum=${a.prod}`)
             } else {
-              const newSum = sum + a.prod
-              log(`${lhs} sum+${a.prod}=${newSum}`)
+              const prev = sum
+              const newSum = prev + a.prod
+              log(`${lhs} ${prev}+${a.prod}=${newSum} sum=${newSum}`)
               sum = newSum
             }
             p += 1
