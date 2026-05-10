@@ -1,4 +1,4 @@
-import { tokens, AH, HA, BH, HB, Value } from "./tokens"
+import { tokens, AH, HA, BH, HB, type Value } from "./tokens"
 
 export function reduce(xs: Value[]): [Value[], number] {
   const ys: Value[] = []

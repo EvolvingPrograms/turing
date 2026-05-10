@@ -13,24 +13,28 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.20.6",
-    "@anthropic-ai/vertex-sdk": "^0.3.5",
-    "chalk": "^5.3.0",
-    "openai": "^4.38.2"
+    "@ai-sdk/anthropic": "^3.0.76",
+    "@ai-sdk/openai": "^3.0.63",
+    "@anthropic-ai/sdk": "^0.20.9",
+    "@anthropic-ai/vertex-sdk": "^0.3.7",
+    "ai": "^6.0.177",
+    "chalk": "^5.4.1",
+    "openai": "^4.80.1",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@eslint/eslintrc": "^3.0.2",
-    "@eslint/js": "^9.1.1",
-    "@types/bun": "^1.1.0",
+    "@eslint/eslintrc": "^3.2.0",
+    "@eslint/js": "^9.19.0",
+    "@types/bun": "^1.2.0",
     "@types/eslint__js": "^8.42.3",
-    "@typescript-eslint/eslint-plugin": "^6.4.0",
-    "eslint": "<9.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.21.0",
+    "eslint": "^8.57.1",
     "eslint-config-standard-with-typescript": "^43.0.1",
-    "eslint-plugin-import": "^2.25.2",
-    "eslint-plugin-n": "^15.0.0 || ^16.0.0",
-    "eslint-plugin-promise": "^6.0.0",
-    "globals": "^15.0.0",
-    "typescript": "*",
-    "typescript-eslint": "^7.7.0"
+    "eslint-plugin-import": "^2.31.0",
+    "eslint-plugin-n": "^16.6.2",
+    "eslint-plugin-promise": "^6.6.0",
+    "globals": "^15.14.0",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^7.18.0"
   }
 }

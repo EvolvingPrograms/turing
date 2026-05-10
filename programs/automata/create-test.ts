@@ -5,7 +5,7 @@
 
 import { writeFile } from "fs/promises"
 import { resolve, dirname } from "path"
-import { formatTape, Tape } from "./eval"
+import { formatTape, type Tape } from "./eval"
 import { shuffle } from "../../src/utils"
 
 const TEST_JSONL = resolve(
