@@ -6,6 +6,32 @@ import { checkRollingSolution } from "./rolling"
 import { addUsage, printUsage, summarizeUsage, zeroUsage } from "./usage"
 import type { ClaudeTestOptions, TestResult } from "./types"
 
+/**
+ * Compute the assistant prefill for a continuation after an overflow.
+ *
+ * Without a boundary regex, returns `completed` (the new chunk minus its
+ * last incomplete line) — same behavior as before this helper existed.
+ *
+ * With a boundary regex, returns the suffix of `fullTrace` starting at
+ * the last boundary match. This makes the resumed prefill cover a complete
+ * in-flight step even when the API cut landed inside one. The boundary
+ * regex must match at the start of a line (use the `m` flag).
+ */
+export function sliceContinuationPrefill(
+  fullTrace: string,
+  completed: string,
+  continueBoundary: RegExp | undefined
+): string {
+  if (!continueBoundary) return completed
+  const flags = continueBoundary.flags.includes("g")
+    ? continueBoundary.flags
+    : continueBoundary.flags + "g"
+  const re = new RegExp(continueBoundary.source, flags)
+  let lastMatch = -1
+  for (const m of fullTrace.matchAll(re)) lastMatch = m.index ?? -1
+  return lastMatch >= 0 ? fullTrace.slice(lastMatch) : completed
+}
+
 export async function testWithClaude({
   system,
   messages,
@@ -15,6 +41,7 @@ export async function testWithClaude({
   main = false,
   startToken,
   solution,
+  continueBoundary,
 }: ClaudeTestOptions): Promise<TestResult> {
   let responseCount = 0
   let runUsage = zeroUsage()
@@ -111,13 +138,11 @@ export async function testWithClaude({
     chunkUsages.push(chunkUsage)
 
     if (overflow) {
-      // Drop the last (incomplete) line; everything before it is a clean
-      // suffix of the trace. Replace (not append) the prefill — the model
-      // continues from just this chunk. The full trace stays on the client
-      // for solution checking and the final return value.
-      const completed = text.split("\n").slice(0, -1).join("\n")
-      lastChunk = `${completed}\n`
-      fullTrace += lastChunk
+      // Drop the last (incomplete) line; the model will recompute it.
+      // Everything before it is a clean suffix of the trace.
+      const completed = text.split("\n").slice(0, -1).join("\n") + "\n"
+      fullTrace += completed
+      lastChunk = sliceContinuationPrefill(fullTrace, completed, continueBoundary)
 
       console.log("\n")
       console.log(chalk.gray("Continuing response."))

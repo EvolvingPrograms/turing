@@ -32,6 +32,12 @@ export interface Program<Args extends readonly string[] = string[]> {
   /** Optional: human-friendly representation of one arg for the run banner table
    *  (e.g. decimal for a hex arg). Receives the raw arg string and its index. */
   display?: (arg: string, index: number) => string
+  /** Optional: regex marking the start of an atomic step in the trace.
+   *  On overflow / continuation, the assistant prefill is sliced from the
+   *  last match in the full trace — so the model always resumes with a
+   *  complete in-flight step in context, even when the cut landed mid-step.
+   *  Must be a multiline (`m` flag) regex that matches at line start. */
+  continueBoundary?: RegExp
   config: ProgramConfig
 }
 

@@ -182,6 +182,7 @@ export async function runProgram<Args extends readonly string[]>(
           startToken,
           messages,
           solution,
+          continueBoundary: program.continueBoundary,
           ...params,
         })
 
@@ -226,4 +227,8 @@ export async function runProgram<Args extends readonly string[]>(
     `Total tokens: in=${totalUsage.inputTokens} out=${totalUsage.outputTokens} cache(read=${totalUsage.cacheReadTokens} write=${totalUsage.cacheWriteTokens})`
   )
   console.log()
+
+  if (correct < runs) {
+    process.exit(1)
+  }
 }

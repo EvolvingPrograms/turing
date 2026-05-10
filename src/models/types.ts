@@ -26,6 +26,10 @@ export interface ClaudeTestOptions {
   main?: boolean;
   solution: string;
   startToken: string | null;
+  /** Optional regex marking step boundaries. When the response overflows,
+   *  the assistant prefill for the continuation is sliced from the last
+   *  match in the full trace so the model resumes inside a complete step. */
+  continueBoundary?: RegExp;
 }
 
 export interface GPTTestOptions {

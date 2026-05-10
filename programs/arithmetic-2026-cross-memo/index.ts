@@ -50,6 +50,14 @@ await runProgram(defineProgram({
     return `${cellEncode(a)}\n${cellEncode(b)}`
   },
   display: (arg) => BigInt(arg).toLocaleString("en-US"),
+  // FIRE ticks (every REFRESH_INTERVAL k-iterations) re-print the A and B
+  // tapes inside a REFRESH/END_REFRESH block. SKIP ticks do not. On
+  // overflow we slice the continuation prefill from the most recent FIRE
+  // tick so the resumed assistant context ALWAYS includes the most recent
+  // operand re-print — without it, a cut landing 1..7 ticks past a FIRE
+  // leaves the model resuming without the operand tape it needs to compute
+  // the next pair line.
+  continueBoundary: /^tick=\d+ \[FIRE\]/m,
   trainingInputs: [
     ["47", "23"],
     ["99", "99"],
