@@ -1,4 +1,4 @@
-import { fromPositional } from "../utils"
+import { fromPositional } from "../encoding"
 
 /**
  * MSB-first nibble tape. Mirrors the array convention of arithmetic-tape's

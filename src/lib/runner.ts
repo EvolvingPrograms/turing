@@ -1,0 +1,200 @@
+import type { Program } from "./program"
+import { formatTrainingTape, encodeArgs, writeTrainingTape, writeTestSet } from "./io"
+import { testWithClaude, testWithGPT } from "../models"
+import { addUsage, printUsage, zeroUsage, type UsageSummary } from "../models/usage"
+import { tqdm } from "../progress"
+import { backoff } from "../backoff"
+import { resolve } from "path"
+
+export interface RunOptions {
+  /** Provider key (e.g. "anthropic"). Default: process.argv[2] || first key in program.config.models. */
+  modelKey?: string
+  /** Tests to run in parallel. Default: 1. */
+  batchSize?: number
+  /** Cooldown seconds between batches. Default: 60. */
+  waitTime?: number
+  /** Run only the first N tests. Default: all. */
+  limit?: number
+  /** When true, also write train.txt and tests.jsonl to programs/<name>/. Default: false. */
+  debug?: boolean
+}
+
+/**
+ * Parse CLI flags from process.argv:
+ *   bun programs/<name>/index.ts [model-key] [--batch=N] [--limit=N] [--debug]
+ * The first non-flag positional arg is the model key.
+ * Returns RunOptions populated from argv. Caller can pass overrides that take precedence.
+ */
+export function parseArgs(overrides?: Partial<RunOptions>): RunOptions {
+  const result: RunOptions = {}
+
+  for (const arg of process.argv.slice(2)) {
+    if (arg.startsWith("--")) {
+      const flag = arg.slice(2)
+      if (flag === "debug") {
+        result.debug = true
+      } else if (flag.startsWith("batch=")) {
+        result.batchSize = parseInt(flag.slice(6), 10)
+      } else if (flag.startsWith("limit=")) {
+        result.limit = parseInt(flag.slice(6), 10)
+      } else if (flag.startsWith("wait=")) {
+        result.waitTime = parseInt(flag.slice(5), 10)
+      }
+    } else if (result.modelKey === undefined) {
+      result.modelKey = arg
+    }
+  }
+
+  // Caller overrides take precedence
+  return { ...result, ...overrides }
+}
+
+/**
+ * Run a program end-to-end. Resolves CLI args via parseArgs(opts).
+ */
+export async function runProgram<Args extends readonly string[]>(
+  program: Program<Args>,
+  options?: RunOptions
+): Promise<void> {
+  const opts = parseArgs(options)
+
+  const modelKey =
+    opts.modelKey ??
+    process.argv[2] ??
+    Object.keys(program.config.models)[0]
+
+  const resolvedModel = program.config.models[modelKey]
+  if (!resolvedModel) {
+    throw new Error(
+      `Unknown provider key "${modelKey}". Available: ${Object.keys(program.config.models).join(", ")}`
+    )
+  }
+
+  const temperature = program.config.temperature ?? 0
+  const max_tokens = program.config.maxTokens ?? 4096
+  const batchSize = opts.batchSize ?? 1
+  const waitTime = opts.waitTime ?? 60
+  const debug = opts.debug ?? false
+
+  // Generate test inputs and apply limit
+  let testInputs = program.generateTestInputs()
+  if (opts.limit !== undefined) {
+    testInputs = testInputs.slice(0, opts.limit)
+  }
+
+  const runs = testInputs.length
+
+  console.log(`Provider key: ${modelKey}`)
+  console.log(`Resolved model: ${resolvedModel}`)
+  console.log(`Tests: ${runs}`)
+
+  // Format training tape in memory
+  const trainingTape = await formatTrainingTape(program)
+
+  // In debug mode, write tape and test set to disk
+  if (debug) {
+    const programDir = resolve(process.cwd(), "programs", program.name)
+    await writeTrainingTape(programDir, program)
+    await writeTestSet(programDir, program)
+  }
+
+  const startTest = resolvedModel.startsWith("openai/") ? testWithGPT : testWithClaude
+
+  let correct = 0
+  let totalUsage = zeroUsage()
+  const numBatches = Math.ceil(runs / batchSize)
+  const indexes = new Array(numBatches).keys()
+
+  for (const batch of tqdm(indexes)) {
+    if (batch > 0) {
+      console.log()
+      console.log(`${waitTime} second cooldown...`)
+      await new Promise((resolve) => setTimeout(resolve, waitTime * 1000))
+    }
+
+    const start = batch * batchSize
+    const end = Math.min(start + batchSize, runs)
+    const adjustedBatchSize = end - start
+
+    const promises: Promise<{ pass: boolean; metadata: unknown }>[] = Array.from({ length: adjustedBatchSize }, (_, i) => {
+      const worker = i
+      const args = testInputs[start + i]
+
+      return backoff(async () => {
+        const main = worker === 0
+        const solution = await program.evaluate(...args)
+        const input = encodeArgs(program, args)
+        const messages = [{ role: "user" as const, content: input }]
+
+        const startToken = solution.split("\n")?.[0].split(" ")?.[0]
+        if (!startToken) {
+          throw new Error(
+            "Failed to find a start token in the solution. We use the first word of the solution."
+          )
+        }
+
+        const params = {
+          model: resolvedModel,
+          debug: true,
+          worker,
+          main,
+          temperature,
+          max_tokens,
+        }
+
+        console.log()
+        console.table(Array.from(args))
+        console.table({ startToken })
+        console.table(params)
+        console.log(`Starting worker ${worker}...`)
+
+        const { pass, metadata } = await startTest({
+          system: trainingTape,
+          startToken,
+          messages,
+          solution,
+          ...params,
+        })
+
+        return { pass, metadata }
+      })
+    })
+
+    const results = await Promise.all(promises)
+    await new Promise((resolve) => setTimeout(resolve, 1000))
+
+    for (const [i, result] of results.entries()) {
+      const { pass, metadata } = result
+      if (pass) correct++
+
+      const runUsage =
+        metadata && typeof metadata === "object" && "usage" in metadata
+          ? (metadata as { usage: UsageSummary }).usage
+          : undefined
+
+      if (runUsage) {
+        totalUsage = addUsage(totalUsage, runUsage)
+        printUsage(`run ${start + i + 1}`, runUsage, totalUsage)
+      }
+    }
+
+    const Test = `${end} / ${runs}`
+    const Correct = `${correct} / ${end}`
+    const Accuracy = `${(correct / end).toFixed(2)}`
+
+    console.log()
+    console.table({ Test, Correct, Accuracy })
+    console.log()
+  }
+
+  console.log("")
+  console.log("--- Final score ---")
+  console.log(`${correct} / ${runs} (${(100 * correct / runs).toFixed(2)}%)`)
+  if (totalUsage.cost !== undefined) {
+    console.log(`Total cost: $${totalUsage.cost.toFixed(4)}`)
+  }
+  console.log(
+    `Total tokens: in=${totalUsage.inputTokens} out=${totalUsage.outputTokens} cache(read=${totalUsage.cacheReadTokens} write=${totalUsage.cacheWriteTokens})`
+  )
+  console.log()
+}

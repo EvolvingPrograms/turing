@@ -1,4 +1,4 @@
-import { fromPositional, toPositional } from "../utils"
+import { fromPositional, toPositional } from "../encoding"
 
 function toDigitArray(n: number | string): number[] {
   if (typeof n === "string") {

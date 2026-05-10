@@ -9,10 +9,11 @@ export async function backoff<Q, T extends () => Q | Promise<Q>>(
   while (true) {
     try {
       return await action()
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (e: any) {
+    } catch (e: unknown) {
       retries++
-      if (e?.message) console.error(e.message)
+      if (e instanceof Error && e.message) {
+        console.error(e.message)
+      }
 
       if (retries <= maxRetries) {
         console.error(`Error. Retrying in ${delay}s. [Attempt ${retries}/${maxRetries}]`)
