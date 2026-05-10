@@ -1,4 +1,4 @@
-import { binaryTapeToInteger, format, fromPositionalBinary, positionFormat } from "../utils"
+import { format, fromPositionalBinary, positionFormat } from "../encoding"
 
 export type TapeValue = 0 | 1
 export type Tape = TapeValue[]
@@ -21,9 +21,10 @@ function multiplyTapes(
   // log(`JOIN ${keys.map((k) => k.padStart(2)).join(" ")}`)
   // log(`JOIN ${Object.keys(keys).map((k) => k.padStart(2)).join(" ")}`)
 
-  log("JOIN")
+  log("\nJOIN")
   let joinedIndex = 0
 
+  // log("\n")
   for (let i = 0; i < tapeA.length; i++) {
     log(`A${i} O${joinedIndex}`)
     joinedIndex++
@@ -139,6 +140,8 @@ export default function multiply(
 
   log("PREPARE")
   const productTape = multiplyTapes(tapeA, tapeB, log)
+
+  // log("")
   log(`RETURN ${positionFormat(productTape)}`)
   // log("FROM BINARY")
   // const product = binaryTapeToInteger(productTape, log)

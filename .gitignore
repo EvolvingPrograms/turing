@@ -10,3 +10,8 @@ error.txt
 service-account.json
 logs
 test.txt
+text.txt
+solution.txt
+.env
+.env.local
+.env.*.local

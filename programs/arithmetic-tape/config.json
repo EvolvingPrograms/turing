@@ -1,8 +1,0 @@
-{
-  "temperature": 0,
-  "max_tokens": 4096,
-  "models": {
-    "openai": "gpt-4",
-    "anthropic": "claude-3-opus@20240229"
-  }
-}

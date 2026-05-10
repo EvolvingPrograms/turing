@@ -54,13 +54,6 @@ export const writeTestFile = async (
   return await writeFile(fullPath, contents)
 }
 
-export function shuffle<Q, T extends Array<Q>>(array: T) {
-  return array
-    .map(value => ({ value, sort: Math.random() }))
-    .sort((a, b) => a.sort - b.sort)
-    .map(({ value }) => value)
-}
-
 export function longFormat(value: number) {
   return value.toLocaleString("en-US", {
     notation: "compact",

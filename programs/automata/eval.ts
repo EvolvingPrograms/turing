@@ -1,4 +1,4 @@
-import { format, integerToBinaryTape, positions } from "../utils"
+import { format, integerToBinaryTape, positions } from "../encoding"
 
 export type TapeValue = 0 | 1
 export type Tape = TapeValue[]

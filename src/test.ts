@@ -1,15 +1,26 @@
 import { testWithClaude, testWithGPT } from "./models"
+import { addUsage, printUsage, zeroUsage, type UsageSummary } from "./models/usage"
 import type { Config, Test } from "./types"
 import { loadJSONFile, loadJSONLFile, loadModuleFile, loadTextFile } from "./utils"
 import { tqdm } from "./progress"
 import { backoff } from "./backoff"
 
-const MODEL = process.argv[3] || "anthropic"
-// const TEST_ID = process.argv[4] || "automata";
+const MODEL = process.argv[2] || "openai"
 
 const prompt = await loadTextFile("train.txt")
 const config = await loadJSONFile<Config>("config.json")
 const tests = await loadJSONLFile<Test>("tests.jsonl")
+
+const resolvedModel = config.models[MODEL]
+if (!resolvedModel) {
+  throw new Error(
+    `Unknown provider key "${MODEL}". Available: ${Object.keys(config.models).join(", ")}`
+  )
+}
+
+console.log(`Provider key: ${MODEL}`)
+console.log(`Resolved model: ${resolvedModel}`)
+console.log(`Tests: ${tests.length}`)
 
 async function runChallenge(test: Test, worker: number) {
   const { default: evaluator } = await loadModuleFile("eval.ts")
@@ -45,7 +56,7 @@ async function runChallenge(test: Test, worker: number) {
   console.table(params)
   console.log(`Starting worker ${worker}...`)
 
-  const startTest = model.startsWith("gpt") ? testWithGPT : testWithClaude
+  const startTest = model.startsWith("openai/") ? testWithGPT : testWithClaude
   const { pass, metadata } = await startTest({
     system: prompt,
     startToken,
@@ -73,6 +84,7 @@ async function runBatch(start: number, n: number) {
 
 export async function test(batchSize = 1, waitTime = 60) {
   let correct = 0
+  let totalUsage = zeroUsage()
   const runs = tests.length
   const numBatches = Math.ceil(runs / batchSize)
 
@@ -92,15 +104,21 @@ export async function test(batchSize = 1, waitTime = 60) {
     const results = await runBatch(start, adjustedBatchSize)
     await new Promise(resolve => setTimeout(resolve, 1000))
 
-    for (const result of results) {
+    for (const [i, result] of results.entries()) {
       const { pass, metadata } = result
       if (pass) correct++
-      if (metadata) {
-        console.log()
-        console.table(metadata)
+
+      const runUsage =
+        metadata && typeof metadata === "object" && "usage" in metadata
+          ? (metadata as { usage: UsageSummary }).usage
+          : undefined
+
+      if (runUsage) {
+        totalUsage = addUsage(totalUsage, runUsage)
+        printUsage(`run ${start + i + 1}`, runUsage, totalUsage)
       }
     }
-      
+
     const Test = `${end} / ${runs}`
     const Correct = `${correct} / ${end}`
     const Accuracy = `${(correct / end).toFixed(2)}`
@@ -113,5 +131,9 @@ export async function test(batchSize = 1, waitTime = 60) {
   console.log("")
   console.log("--- Final score ---")
   console.log(`${correct} / ${runs} (${(100 * correct / runs).toFixed(2)}%)`)
+  if (totalUsage.cost !== undefined) {
+    console.log(`Total cost: $${totalUsage.cost.toFixed(4)}`)
+  }
+  console.log(`Total tokens: in=${totalUsage.inputTokens} out=${totalUsage.outputTokens} cache(read=${totalUsage.cacheReadTokens} write=${totalUsage.cacheWriteTokens})`)
   console.log()
 }
