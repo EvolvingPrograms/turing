@@ -224,16 +224,19 @@ describe("printUsage", () => {
 
     printUsage("run 1", usage, usage)
 
-    // Two calls: leading blank console.log() (separator from streamed output),
-    // then the actual usage summary line.
-    expect(spy).toHaveBeenCalledTimes(2)
+    // Three calls: leading blank console.log() (separator from streamed
+    // output), per-run summary line, cumulative summary line.
+    expect(spy).toHaveBeenCalledTimes(3)
 
-    // Reconstruct what was logged in the summary line — chalk wraps in ANSI codes
-    const logged = spy.mock.calls[1].join(" ")
-    expect(logged).toContain("run 1")
-    expect(logged).toContain("in=")
-    expect(logged).toContain("out=")
-    expect(logged).toContain("$")
+    const runLine = spy.mock.calls[1].join(" ")
+    const cumLine = spy.mock.calls[2].join(" ")
+    expect(runLine).toContain("run 1")
+    expect(runLine).toContain("in=")
+    expect(runLine).toContain("out=")
+    expect(runLine).toContain("$")
+    expect(cumLine).toContain("cum")
+    expect(cumLine).toContain("in=")
+    expect(cumLine).toContain("out=")
 
     spy.mockRestore()
   })

@@ -73,21 +73,22 @@ export const zeroUsage = (): UsageSummary => ({ ...ZERO })
 
 const usd = (n: number) => `$${n.toFixed(4)}`
 
-export function printUsage(label: string, run: UsageSummary, total: UsageSummary) {
-  const tokens = `in=${longFormat(run.inputTokens)} out=${longFormat(run.outputTokens)}`
+function fmtTokens(u: UsageSummary): string {
   const cache =
-    run.cacheReadTokens || run.cacheWriteTokens
-      ? ` cache(read=${longFormat(run.cacheReadTokens)} write=${longFormat(run.cacheWriteTokens)})`
+    u.cacheReadTokens || u.cacheWriteTokens
+      ? ` cache(read=${longFormat(u.cacheReadTokens)} write=${longFormat(u.cacheWriteTokens)})`
       : ""
-  const reasoning = run.reasoningTokens
-    ? ` reasoning=${longFormat(run.reasoningTokens)}`
+  const reasoning = u.reasoningTokens
+    ? ` reasoning=${longFormat(u.reasoningTokens)}`
     : ""
-  const runCost = run.cost !== undefined ? ` ${usd(run.cost)}` : ""
-  const totalCost =
-    total.cost !== undefined ? ` (cum ${usd(total.cost)})` : ""
+  const cost = u.cost !== undefined ? ` ${usd(u.cost)}` : ""
+  return `in=${longFormat(u.inputTokens)} out=${longFormat(u.outputTokens)}${cache}${reasoning}${cost}`
+}
 
+export function printUsage(label: string, run: UsageSummary, total: UsageSummary) {
   // Leading newline: the model's streamed RETURN line above doesn't end in \n,
   // so the per-run summary would otherwise collide with it.
   console.log()
-  console.log(chalk.gray(`[${label}] ${tokens}${cache}${reasoning}${runCost}${totalCost}`))
+  console.log(chalk.gray(`[${label}] ${fmtTokens(run)}`))
+  console.log(chalk.gray(`[cum]     ${fmtTokens(total)}`))
 }

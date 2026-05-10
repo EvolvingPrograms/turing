@@ -73,7 +73,8 @@ export function makeMultiply(chunk: number, karatsubaThreshold: number) {
   function crossMemoMultiply(
     a: bigint,
     b: bigint,
-    log: (...args: string[]) => void
+    log: (...args: string[]) => void,
+    topLevel: boolean
   ): bigint {
     const A = digitsToTape(a.toString(10))
     const B = digitsToTape(b.toString(10))
@@ -83,7 +84,13 @@ export function makeMultiply(chunk: number, karatsubaThreshold: number) {
     let carry = 0
     const REFRESH_INTERVAL = 8
 
-    log("SUB")
+    // topLevel=true: emit a self-terminating cross-memo trace ending in
+    //   `RETURN O0_.. O1_.. ...` — same shape as the standalone cross-memo
+    //   program. Stays in cell-space so the model never reverses+concats
+    //   16+ cells into a single integer.
+    // topLevel=false: wrap inside SUB / END_SUB so the karatsuba caller
+    //   can frame this as a sub-multiplication and read SUB_RETURN cells.
+    if (!topLevel) log("SUB")
     log(`CHUNK=${chunk}`)
 
     for (let k = 0; k < N + M - 1; k++) {
@@ -155,8 +162,12 @@ export function makeMultiply(chunk: number, karatsubaThreshold: number) {
     log(`k=${N + M - 1}`)
     log(`O${N + M - 1}_${padCell(carry)}`)
 
-    log(`SUB_RETURN ${tapeFmt(out, "O")}`)
-    log("END_SUB")
+    if (topLevel) {
+      log(`RETURN ${tapeFmt(out, "O")}`)
+    } else {
+      log(`SUB_RETURN ${tapeFmt(out, "O")}`)
+      log("END_SUB")
+    }
 
     return tapeToBigInt(out)
   }
@@ -166,13 +177,22 @@ export function makeMultiply(chunk: number, karatsubaThreshold: number) {
   function karatsubaMultiply(
     a: bigint,
     b: bigint,
-    log: (...args: string[]) => void
+    log: (...args: string[]) => void,
+    topLevel: boolean
   ): bigint {
     const N = Math.max(digitsOfBig(a), digitsOfBig(b))
+
+    // Externalize the dispatch as two tokens: N=X KT=Y on one line, then
+    // the comparison result (N<=KT or N>KT) on the next. The next opcode
+    // (SUB for cross-memo, KARATSUBA for the split) follows deterministically
+    // from the comparison. The model never has to remember KT — it reads
+    // it on the line and computes a bounded comparison one step back.
+    log(`N=${N} KT=${karatsubaThreshold}`)
     if (N <= karatsubaThreshold) {
-      // Direct cross-memo, no Karatsuba split
-      return crossMemoMultiply(a, b, log)
+      log(`N<=KT`)
+      return crossMemoMultiply(a, b, log, topLevel)
     }
+    log(`N>KT`)
 
     const half = Math.ceil(N / 2)
     const split = 10n ** BigInt(half)
@@ -184,11 +204,11 @@ export function makeMultiply(chunk: number, karatsubaThreshold: number) {
     log(`B_HI=${bHi} B_LO=${bLo}`)
 
     log(`CALL z0 = A_LO*B_LO = ${aLo}*${bLo}`)
-    const z0 = crossMemoMultiply(aLo, bLo, log)
+    const z0 = karatsubaMultiply(aLo, bLo, log, false)
     log(`RET z0=${z0}`)
 
     log(`CALL z2 = A_HI*B_HI = ${aHi}*${bHi}`)
-    const z2 = crossMemoMultiply(aHi, bHi, log)
+    const z2 = karatsubaMultiply(aHi, bHi, log, false)
     log(`RET z2=${z2}`)
 
     const sx = aHi + aLo, sy = bHi + bLo
@@ -196,7 +216,7 @@ export function makeMultiply(chunk: number, karatsubaThreshold: number) {
     log(`sy = ${bHi}+${bLo} = ${sy}`)
 
     log(`CALL z3 = sx*sy = ${sx}*${sy}`)
-    const z3 = crossMemoMultiply(sx, sy, log)
+    const z3 = karatsubaMultiply(sx, sy, log, false)
     log(`RET z3=${z3}`)
 
     const z3MinusZ2 = z3 - z2
@@ -238,8 +258,15 @@ export function makeMultiply(chunk: number, karatsubaThreshold: number) {
 
     log("START")
     log(`A=${a} B=${b}`)
-    const result = karatsubaMultiply(a, b, log)
-    log(`RETURN ${result}`)
+    const result = karatsubaMultiply(a, b, log, true)
+    // Karatsuba path: result already exists as integer in the trace
+    // (`result = partial+z0 = X+Y = Z`). Emit a terminal RETURN <int>.
+    // Cross-memo path: crossMemoMultiply already emitted `RETURN O0_.. ..`
+    // in cell-form when topLevel=true — no further RETURN needed.
+    const N = Math.max(digitsOfBig(a), digitsOfBig(b))
+    if (N > karatsubaThreshold) {
+      log(`RETURN ${result}`)
+    }
 
     if (result !== a * b) {
       throw new Error(`eval produced wrong product: ${a}*${b} expected=${a*b} got=${result}`)

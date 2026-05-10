@@ -18,67 +18,66 @@ export async function testWithClaude({
 }: ClaudeTestOptions): Promise<TestResult> {
   let responseCount = 0
   let runUsage = zeroUsage()
+  const chunkUsages: ReturnType<typeof summarizeUsage>[] = []
+
+  // Rolling prefill: every continuation sends exactly
+  //   { system (cached), messages: [...initial, { assistant: lastChunk }] }
+  // where lastChunk is the previous call's output (truncated to last
+  // complete line). No cacheControl on messages — only the system has a
+  // breakpoint. The trace itself contains enough state (REFRESH operands,
+  // running carry/sum) to continue from the last chunk alone; earlier
+  // chunks are not re-sent. Full trace is reassembled client-side for
+  // the final return value.
+  let lastChunk = ""
+  let fullTrace = ""
+
+  // Keep system byte-stable across continuations so the breakpoint stays
+  // valid. Optionally append a BEGIN RESPONSE WITH instruction on the
+  // first call only; the instruction is encoded once and never mutated.
+  const effectiveSystem = startToken && system
+    ? `${system}\n---\nBEGIN RESPONSE WITH: ${startToken}\n`
+    : system
+
+  const systemMessage = effectiveSystem
+    ? {
+      role: "system" as const,
+      content: effectiveSystem,
+      providerOptions: {
+        anthropic: { cacheControl: { type: "ephemeral" as const } },
+      },
+    }
+    : undefined
 
   while (true) {
     console.log()
     console.log(chalk.bold(chalk.yellow(`Response ${responseCount + 1}:`)))
     console.log()
 
-    const assistantMessages = messages.filter(({ role }) => role === "assistant")
+    // Opus 4.6+ rejects assistant-terminal prefill ("conversation must end
+    // with a user message"). So on continuation we send the last chunk as
+    // an assistant turn and append a user CONTINUE prompt. The lastChunk
+    // replaces (not appends) — messages never grow beyond 3 entries.
+    const callMessages = lastChunk
+      ? [
+        ...messages,
+        { role: "assistant" as const, content: lastChunk },
+        { role: "user" as const, content: "CONTINUE" },
+      ]
+      : messages
 
-    /**
-     * Select last {responseCount} assistant messages.
-     */
-    const priorContent =
-      assistantMessages
-        .slice(assistantMessages.length - responseCount)
-        .map(({ content }) =>
-          typeof content === "string"
-            ? content
-            : content
-              .map((part) => (part.type === "text" ? part.text : ""))
-              .join("")
-        )
-        .join("")
-
-    /**
-     * Keep the system content byte-stable across continuations so the
-     * cache_control marker stays valid. We *don't* drop the BEGIN RESPONSE
-     * WITH instruction on iter > 0 the way we used to — that would mutate
-     * the system content between iterations and bust the cache.
-     */
-    const effectiveSystem = startToken && system
-      ? `${system}\n---\nBEGIN RESPONSE WITH: ${startToken}\n`
-      : system
-
-    let output = priorContent
-
-    // Pass the training tape as a SystemModelMessage with an explicit
-    // anthropic cache_control marker. The top-level system: field accepts
-    // string | SystemModelMessage | SystemModelMessage[], so we can attach
-    // providerOptions without putting it inside `messages` (which would
-    // trigger the SDK's prompt-injection warning).
-    const systemMessage = effectiveSystem
-      ? {
-        role: "system" as const,
-        content: effectiveSystem,
-        providerOptions: {
-          anthropic: { cacheControl: { type: "ephemeral" as const } },
-        },
-      }
-      : undefined
+    // `output` tracks the FULL trace client-side (for the rolling solution
+    // check, which compares the trace from START). The API only ever sees
+    // `lastChunk` as the prefill — never the full trace.
+    let output = fullTrace
 
     const result = streamText({
       model,
-      messages,
+      messages: callMessages,
       ...(systemMessage && { system: systemMessage }),
       maxOutputTokens: max_tokens || 4096,
       temperature,
       providerOptions: {
-        gateway: { caching: "auto" },
-        anthropic: {
-          thinking: { type: "disabled" },
-        },
+        anthropic: { thinking: { type: "disabled" } },
       },
     })
 
@@ -109,26 +108,16 @@ export async function testWithClaude({
 
     const chunkUsage = summarizeUsage(usage, providerMetadata)
     runUsage = addUsage(runUsage, chunkUsage)
+    chunkUsages.push(chunkUsage)
 
     if (overflow) {
-      /**
-       * Drop the last line from an incomplete response.
-       */
+      // Drop the last (incomplete) line; everything before it is a clean
+      // suffix of the trace. Replace (not append) the prefill — the model
+      // continues from just this chunk. The full trace stays on the client
+      // for solution checking and the final return value.
       const completed = text.split("\n").slice(0, -1).join("\n")
-      // Mark the assistant continuation with cacheControl so the next call
-      // can read its prior partial response from cache instead of
-      // re-processing it. Combined with the stable system above, the entire
-      // prefix prior to "CONTINUE" stays cache-resident.
-      messages.push(
-        {
-          role: "assistant",
-          content: `${completed}\n`,
-          providerOptions: {
-            anthropic: { cacheControl: { type: "ephemeral" as const } },
-          },
-        },
-        { role: "user", content: "CONTINUE" }
-      )
+      lastChunk = `${completed}\n`
+      fullTrace += lastChunk
 
       console.log("\n")
       console.log(chalk.gray("Continuing response."))
@@ -142,8 +131,8 @@ export async function testWithClaude({
 
     return {
       pass: true,
-      text,
-      metadata: { finishReason, usage: runUsage },
+      text: fullTrace + text,
+      metadata: { finishReason, usage: runUsage, chunks: chunkUsages },
     }
   }
 }

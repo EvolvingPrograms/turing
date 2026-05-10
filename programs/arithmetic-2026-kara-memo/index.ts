@@ -30,9 +30,30 @@ function randomDecimal(digits: number, leadingNonZero = true): string {
 await runProgram(defineProgram({
   name: "arithmetic-2026-kara-memo",
   evaluate: (a, b) => multiply(a, b),
-  // Pass operands as plain decimal strings — Karatsuba and cross-memo
-  // both work on integers, splits derived via division.
-  encode: (a, b) => `A=${a}\nB=${b}`,
+  // Give the model both forms: the integer (Karatsuba splits the operand
+  // by division on the integer) and the cell-aligned LSB-first tape (the
+  // cross-memo sub-block transcribes cells 1:1 from [USER]). Without the
+  // cell form the model has to mentally chunk the integer when entering
+  // a cross-memo block at the top level, which drifts on the first tape
+  // copy. Same TAPE_CHUNK=4 wrapping as cross-memo standalone.
+  encode: (a, b) => {
+    const TAPE_CHUNK = 4
+    const cellEncode = (s: string): string => {
+      const pad = s.length % CHUNK === 0 ? 0 : CHUNK - (s.length % CHUNK)
+      const padded = "0".repeat(pad) + s
+      const cells: string[] = []
+      for (let i = padded.length; i > 0; i -= CHUNK) {
+        cells.push(padded.slice(i - CHUNK, i))
+      }
+      const labeled = cells.map((v, i) => `${i}:${v}`)
+      const lines: string[] = []
+      for (let i = 0; i < labeled.length; i += TAPE_CHUNK) {
+        lines.push(labeled.slice(i, i + TAPE_CHUNK).join(" "))
+      }
+      return lines.join("\n")
+    }
+    return `A=${a}\n${cellEncode(a)}\nB=${b}\n${cellEncode(b)}`
+  },
   display: (arg) => BigInt(arg).toLocaleString("en-US"),
   trainingInputs: [
     // Sub-threshold: triggers pure cross-memo path (no Karatsuba).
