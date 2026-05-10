@@ -40,27 +40,13 @@ function multiplyNibbleTapes(
   log(nibbleArrayFmt(tapeA, "A"))
   log(nibbleArrayFmt(tapeB, "B"))
 
-  log("")
-  log("JOIN")
-  let joinedIndex = 0
-  for (let i = 0; i < tapeA.length; i++) log(`A${i} O${joinedIndex++}`)
-  for (let i = 0; i < tapeB.length; i++) log(`B${i} O${joinedIndex++}`)
-
-  let skipped = false
   for (let i = tapeB.length - 1; i >= 0; i--) {
-    if (!skipped) {
-      log(nibbleArrayFmt(tapeA, "A"))
-      log(nibbleArrayFmt(tapeB, "B"))
-    }
-    skipped = false
-
     const headB = tapeB[i]
     const topPos = i + tapeA.length
 
     log(`B${i}_${hex(headB)} ${topPos} ${topPos - 1}`)
 
     if (headB === 0) {
-      skipped = true
       continue
     }
 
@@ -80,23 +66,17 @@ function multiplyNibbleTapes(
       // 2-operand op: multiply, add-O, add-carry, split. The 3-operand
       // add was where the model slipped on wider tapes — splitting it
       // into two 2-operand adds keeps every step trivial.
-      log(`B${i}_${hex(headB)} A${j}_${hex(headA)} O${position}_${hex(oldO)} c${hex(carry)}`)
-      log(`${hex(headA)}*${hex(headB)}=${hex(product)}`)
-      log(`${hex(product)}+${hex(oldO)}=${hex(partial)}`)
-      log(`${hex(partial)}+${hex(carry)}=${hex(total)}`)
-
       output[position] = newNibble
-      log(`O${position}_${hex(newNibble)} c${hex(newCarry)}`)
+      log(`B${i}_${hex(headB)} A${j}_${hex(headA)} O${position}_${hex(oldO)} c${hex(carry)} ${hex(headA)}*${hex(headB)}=${hex(product)} ${hex(product)}+${hex(oldO)}=${hex(partial)} ${hex(partial)}+${hex(carry)}=${hex(total)} O${position}_${hex(newNibble)} c${hex(newCarry)}`)
 
       carry = newCarry
     }
 
     output[i] = (output[i] + carry) & 0xf
     log(`O${i}_${hex(output[i])}`)
-
-    log(nibbleArrayFmt(output, "O"))
   }
 
+  log(nibbleArrayFmt(output, "O"))
   return output
 }
 
