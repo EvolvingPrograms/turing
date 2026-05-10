@@ -1,5 +1,4 @@
-import { gateway } from "ai"
-import type { LanguageModelUsage } from "ai"
+import type { LanguageModelUsage, ProviderMetadata } from "ai"
 import chalk from "chalk"
 
 import { longFormat } from "../utils"
@@ -25,27 +24,25 @@ const ZERO: UsageSummary = {
 }
 
 /**
- * The gateway needs a moment after a stream finishes before generation info is
- * available — we retry a small number of times. This is best-effort: if the
- * lookup fails we still return the local usage data.
+ * Pull cost (USD) from gateway-provided providerMetadata. The gateway returns
+ * cost as a string (e.g. "0.000265") in providerMetadata.gateway.cost on every
+ * response — no extra HTTP roundtrip needed. Falls back to undefined if the
+ * field isn't present (e.g. running against a non-gateway provider).
  */
-async function fetchCost(id: string, attempts = 4): Promise<number | undefined> {
-  for (let i = 0; i < attempts; i++) {
-    try {
-      const info = await gateway.getGenerationInfo({ id })
-      return info.totalCost
-    } catch {
-      await new Promise((r) => setTimeout(r, 250 * (i + 1)))
-    }
+function extractCost(providerMetadata?: ProviderMetadata): number | undefined {
+  const raw = providerMetadata?.gateway?.cost
+  if (typeof raw === "string") {
+    const n = parseFloat(raw)
+    return Number.isFinite(n) ? n : undefined
   }
+  if (typeof raw === "number") return raw
   return undefined
 }
 
-export async function summarizeUsage(
+export function summarizeUsage(
   usage: LanguageModelUsage,
-  responseId?: string
-): Promise<UsageSummary> {
-  const cost = responseId ? await fetchCost(responseId) : undefined
+  providerMetadata?: ProviderMetadata
+): UsageSummary {
   return {
     inputTokens: usage.inputTokens ?? 0,
     outputTokens: usage.outputTokens ?? 0,
@@ -53,7 +50,7 @@ export async function summarizeUsage(
     cacheReadTokens: usage.inputTokenDetails?.cacheReadTokens ?? 0,
     cacheWriteTokens: usage.inputTokenDetails?.cacheWriteTokens ?? 0,
     reasoningTokens: usage.outputTokenDetails?.reasoningTokens ?? 0,
-    cost,
+    cost: extractCost(providerMetadata),
   }
 }
 
@@ -89,5 +86,8 @@ export function printUsage(label: string, run: UsageSummary, total: UsageSummary
   const totalCost =
     total.cost !== undefined ? ` (cum ${usd(total.cost)})` : ""
 
+  // Leading newline: the model's streamed RETURN line above doesn't end in \n,
+  // so the per-run summary would otherwise collide with it.
+  console.log()
   console.log(chalk.gray(`[${label}] ${tokens}${cache}${reasoning}${runCost}${totalCost}`))
 }

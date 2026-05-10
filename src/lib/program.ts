@@ -1,7 +1,8 @@
 export interface ProgramConfig {
   temperature?: number
   maxTokens?: number
-  models: Record<string, string>  // provider key -> gateway model slug
+  /** Full gateway model slug used when no slug is passed on the CLI. e.g. "anthropic/claude-opus-4.6". */
+  defaultModel: string
 }
 
 /**
@@ -20,10 +21,17 @@ export interface Program<Args extends readonly string[] = string[]> {
   evaluate: (...args: Args) => string | Promise<string>
   /** Each tuple becomes one [USER]/[ASSISTANT] block in the training tape. */
   trainingInputs: Args[]
-  /** Returns the [USER] inputs to feed at test time. Called once per run. */
-  generateTestInputs: () => Args[]
+  /** Returns the [USER] inputs to feed at test time. Called once per run.
+   *  Receives trailing positional args from the CLI (e.g. arithmetic-2026
+   *  reads `extra[0]` / `extra[1]` as the digit counts for A and B), plus
+   *  any unknown `--key=value` flags via `flags` (e.g. `flags.chunk`).
+   *  The lib caps the returned array to `-n N` if the user passes one. */
+  generateTestInputs: (opts?: { extra?: string[]; flags?: Record<string, string> }) => Args[]
   /** Optional: format args as the [USER] block content. Default: args.join("\n"). */
   encode?: (...args: Args) => string
+  /** Optional: human-friendly representation of one arg for the run banner table
+   *  (e.g. decimal for a hex arg). Receives the raw arg string and its index. */
+  display?: (arg: string, index: number) => string
   config: ProgramConfig
 }
 

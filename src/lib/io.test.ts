@@ -42,7 +42,7 @@ describe("encodeArgs", () => {
       evaluate: () => "",
       trainingInputs: [],
       generateTestInputs: () => [],
-      config: { models: {} },
+      config: { defaultModel: "anthropic/claude-opus-4.6" },
     })
     expect(encodeArgs(prog, ["x", "y"])).toBe("x\ny")
   })
@@ -54,7 +54,7 @@ describe("encodeArgs", () => {
       trainingInputs: [],
       generateTestInputs: () => [],
       encode: (a, b) => `${a}=${b}`,
-      config: { models: {} },
+      config: { defaultModel: "anthropic/claude-opus-4.6" },
     })
     expect(encodeArgs(prog, ["x", "y"])).toBe("x=y")
   })
@@ -71,7 +71,7 @@ describe("formatTrainingTape", () => {
       evaluate: (...args: string[]) => "trace for " + args.join(","),
       trainingInputs: [["hello", "world"], ["foo", "bar"]],
       generateTestInputs: () => [],
-      config: { models: {} },
+      config: { defaultModel: "anthropic/claude-opus-4.6" },
     })
 
     const result = await formatTrainingTape(prog)
@@ -96,7 +96,7 @@ describe("formatTrainingTape", () => {
       },
       trainingInputs: [["p", "q"]],
       generateTestInputs: () => [],
-      config: { models: {} },
+      config: { defaultModel: "anthropic/claude-opus-4.6" },
     })
 
     const result = await formatTrainingTape(prog)
@@ -110,7 +110,7 @@ describe("formatTrainingTape", () => {
       trainingInputs: [["x", "y"]],
       generateTestInputs: () => [],
       encode: (a: string, b: string) => `${a}|${b}`,
-      config: { models: {} },
+      config: { defaultModel: "anthropic/claude-opus-4.6" },
     })
 
     const result = await formatTrainingTape(prog)
@@ -123,7 +123,7 @@ describe("formatTrainingTape", () => {
       evaluate: () => "irrelevant",
       trainingInputs: [],
       generateTestInputs: () => [],
-      config: { models: {} },
+      config: { defaultModel: "anthropic/claude-opus-4.6" },
     })
 
     const result = await formatTrainingTape(prog)
@@ -142,7 +142,7 @@ describe("formatTestSet", () => {
       evaluate: () => "",
       trainingInputs: [],
       generateTestInputs: () => [["a", "b"], ["c", "d"]],
-      config: { models: {} },
+      config: { defaultModel: "anthropic/claude-opus-4.6" },
     })
 
     const result = formatTestSet(prog)
@@ -159,7 +159,7 @@ describe("formatTestSet", () => {
       trainingInputs: [],
       generateTestInputs: () => [["x", "y"]],
       encode: (a, b) => `${a}:${b}`,
-      config: { models: {} },
+      config: { defaultModel: "anthropic/claude-opus-4.6" },
     })
 
     const result = formatTestSet(prog)
@@ -173,7 +173,7 @@ describe("formatTestSet", () => {
       evaluate: () => "",
       trainingInputs: [],
       generateTestInputs: () => [["a", "b"]],
-      config: { models: {} },
+      config: { defaultModel: "anthropic/claude-opus-4.6" },
     })
 
     const result = formatTestSet(prog)
@@ -186,7 +186,7 @@ describe("formatTestSet", () => {
       evaluate: () => "",
       trainingInputs: [],
       generateTestInputs: () => [],
-      config: { models: {} },
+      config: { defaultModel: "anthropic/claude-opus-4.6" },
     })
 
     const result = formatTestSet(prog)
@@ -214,7 +214,7 @@ describe("writeTrainingTape", () => {
       evaluate: (...args: string[]) => args.join("+"),
       trainingInputs: [["1", "2"], ["3", "4"]],
       generateTestInputs: () => [],
-      config: { models: {} },
+      config: { defaultModel: "anthropic/claude-opus-4.6" },
     })
 
     await writeTrainingTape(tmpDir, prog)
@@ -240,7 +240,7 @@ describe("writeTestSet", () => {
       evaluate: () => "",
       trainingInputs: [],
       generateTestInputs: () => [["a", "b"], ["c", "d"]],
-      config: { models: {} },
+      config: { defaultModel: "anthropic/claude-opus-4.6" },
     })
 
     await writeTestSet(tmpDir, prog)

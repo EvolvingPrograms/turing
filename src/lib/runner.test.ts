@@ -12,13 +12,14 @@ describe("parseArgs", () => {
     process.argv = originalArgv
   })
 
-  test("no args — all fields absent", () => {
+  test("no args — all fields absent (extra is empty array)", () => {
     const opts = parseArgs()
     expect(opts.modelKey).toBeUndefined()
     expect(opts.debug).toBeUndefined()
     expect(opts.batchSize).toBeUndefined()
-    expect(opts.limit).toBeUndefined()
+    expect(opts.n).toBeUndefined()
     expect(opts.waitTime).toBeUndefined()
+    expect(opts.extra).toEqual([])
   })
 
   test("just modelKey positional", () => {
@@ -43,13 +44,11 @@ describe("parseArgs", () => {
     expect(opts.batchSize).toBe(4)
   })
 
-  test("multiple positionals — first wins, second is silently ignored", () => {
-    process.argv = ["bun", "/some/index.ts", "anthropic", "extra"]
+  test("multiple positionals — first is modelKey, rest go into extra", () => {
+    process.argv = ["bun", "/some/index.ts", "anthropic", "8", "12"]
     const opts = parseArgs()
-    // Only the first non-flag positional is captured as modelKey;
-    // subsequent positionals are silently dropped (not --prefixed, but modelKey
-    // is already set so the else-if branch is skipped).
     expect(opts.modelKey).toBe("anthropic")
+    expect(opts.extra).toEqual(["8", "12"])
   })
 
   test("--batch=N sets batchSize", () => {
@@ -58,10 +57,16 @@ describe("parseArgs", () => {
     expect(opts.batchSize).toBe(4)
   })
 
-  test("--limit=N sets limit", () => {
-    process.argv = ["bun", "/some/index.ts", "--limit=10"]
+  test("--n=N sets n", () => {
+    process.argv = ["bun", "/some/index.ts", "--n=10"]
     const opts = parseArgs()
-    expect(opts.limit).toBe(10)
+    expect(opts.n).toBe(10)
+  })
+
+  test("-n N (separate token) sets n", () => {
+    process.argv = ["bun", "/some/index.ts", "-n", "5"]
+    const opts = parseArgs()
+    expect(opts.n).toBe(5)
   })
 
   test("--wait=N sets waitTime", () => {

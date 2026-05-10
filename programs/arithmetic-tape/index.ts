@@ -40,9 +40,6 @@ await runProgram(defineProgram({
   config: {
     temperature: 0,
     maxTokens: 4096,
-    models: {
-      openai: "openai/gpt-5",
-      anthropic: "anthropic/claude-opus-4.6",
-    },
+    defaultModel: "anthropic/claude-opus-4.6",
   },
 }))

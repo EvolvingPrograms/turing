@@ -31,7 +31,7 @@ export async function testWithGPT({
   })
 
   let { text } = generation
-  const usageSummary = await summarizeUsage(generation.usage, generation.response.id)
+  const usageSummary = summarizeUsage(generation.usage, generation.providerMetadata)
 
   text = text.trim()
   solution = solution.trim()

@@ -42,22 +42,36 @@ export async function testWithClaude({
         .join("")
 
     /**
-     * Clear the start token instruction when continuing responses.
+     * Keep the system content byte-stable across continuations so the
+     * cache_control marker stays valid. We *don't* drop the BEGIN RESPONSE
+     * WITH instruction on iter > 0 the way we used to — that would mutate
+     * the system content between iterations and bust the cache.
      */
-    if (responseCount > 0) {
-      startToken = null
-    }
-
-    let effectiveSystem = system
-    if (startToken && effectiveSystem) {
-      effectiveSystem = `${effectiveSystem}\n---\nBEGIN RESPONSE WITH: ${startToken}\n`
-    }
+    const effectiveSystem = startToken && system
+      ? `${system}\n---\nBEGIN RESPONSE WITH: ${startToken}\n`
+      : system
 
     let output = priorContent
+
+    // Pass the training tape as a SystemModelMessage with an explicit
+    // anthropic cache_control marker. The top-level system: field accepts
+    // string | SystemModelMessage | SystemModelMessage[], so we can attach
+    // providerOptions without putting it inside `messages` (which would
+    // trigger the SDK's prompt-injection warning).
+    const systemMessage = effectiveSystem
+      ? {
+        role: "system" as const,
+        content: effectiveSystem,
+        providerOptions: {
+          anthropic: { cacheControl: { type: "ephemeral" as const } },
+        },
+      }
+      : undefined
 
     const result = streamText({
       model,
       messages,
+      ...(systemMessage && { system: systemMessage }),
       maxOutputTokens: max_tokens || 4096,
       temperature,
       providerOptions: {
@@ -66,7 +80,6 @@ export async function testWithClaude({
           thinking: { type: "disabled" },
         },
       },
-      ...(effectiveSystem && { system: effectiveSystem }),
     })
 
     let failedResult: TestResult | null = null
@@ -90,11 +103,11 @@ export async function testWithClaude({
 
     const finishReason = await result.finishReason
     const usage = await result.usage
-    const response = await result.response
+    const providerMetadata = await result.providerMetadata
     const text = await result.text
     const overflow = finishReason === "length"
 
-    const chunkUsage = await summarizeUsage(usage, response.id)
+    const chunkUsage = summarizeUsage(usage, providerMetadata)
     runUsage = addUsage(runUsage, chunkUsage)
 
     if (overflow) {
@@ -102,8 +115,18 @@ export async function testWithClaude({
        * Drop the last line from an incomplete response.
        */
       const completed = text.split("\n").slice(0, -1).join("\n")
+      // Mark the assistant continuation with cacheControl so the next call
+      // can read its prior partial response from cache instead of
+      // re-processing it. Combined with the stable system above, the entire
+      // prefix prior to "CONTINUE" stays cache-resident.
       messages.push(
-        { role: "assistant", content: `${completed}\n` },
+        {
+          role: "assistant",
+          content: `${completed}\n`,
+          providerOptions: {
+            anthropic: { cacheControl: { type: "ephemeral" as const } },
+          },
+        },
         { role: "user", content: "CONTINUE" }
       )
 

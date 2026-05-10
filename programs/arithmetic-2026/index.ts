@@ -7,25 +7,43 @@ await runProgram(defineProgram({
   name: "arithmetic-2026",
   evaluate: (a, b) => multiply(a, b),
   encode: (a, b) => `${toPositionalHex(a)}\n${toPositionalHex(b)}`,
+  display: (arg) => BigInt("0x" + arg).toLocaleString("en-US"),
   trainingInputs: [
+    // Symmetric anchor: simplest possible 2x2, no skips.
     ["7e", "23"],
-    ["a3f", "207"],
+    // 2x3 asymmetric (A<B), mid-stream skip in B.
+    ["7e", "207"],
+    // 2x3 asymmetric (A<B), start-of-trace skip (B's LSB nibble = 0).
     ["9c", "830"],
-    ["1234", "5678"],
-    ["abc1", "9d20"],
-    ["7f3a", "8025"],
-    ["c4d801", "9af20b"],
+    // 3x2 asymmetric (A>B). Forces the model to disambiguate which width
+    // drives topPos.
+    ["a3f", "27"],
+    // 4x3 asymmetric (A>B), no skips — the exact shape we observed failing
+    // when training was symmetric-only.
+    ["1234", "567"],
+    // 4x3 asymmetric (A>B), different digit pattern.
+    ["7f3a", "825"],
+    // 4x6 asymmetric (A<B), multi-iteration with mid-stream skip (B4=0).
+    ["c4d8", "9af20b"],
   ],
-  generateTestInputs: () => {
-    const widths = [4, 4, 4, 8, 8, 8, 12, 12, 14, 14]
-    return widths.map(w => [randomHex(w), randomHex(w)] as [string, string])
+  generateTestInputs: (opts) => {
+    // Trailing positional args are digit counts for A and B:
+    //   bun programs/arithmetic-2026 <model> <digits-a> [digits-b]
+    // If only one is passed, both operands use it. The lib caps to -n N.
+    const extra = opts?.extra ?? []
+    if (extra.length > 0) {
+      const a = parseInt(extra[0], 10)
+      const b = parseInt(extra[1] ?? extra[0], 10)
+      return Array.from({ length: 10 }, () => [randomHex(a), randomHex(b)] as [string, string])
+    }
+    const widths: Array<[number, number]> = [
+      [4, 4], [4, 4], [4, 4], [8, 8], [8, 8], [8, 8], [12, 12], [12, 12], [14, 14], [14, 14],
+    ]
+    return widths.map(([a, b]) => [randomHex(a), randomHex(b)] as [string, string])
   },
   config: {
     temperature: 0,
     maxTokens: 4096,
-    models: {
-      openai: "openai/gpt-5",
-      anthropic: "anthropic/claude-opus-4.6",
-    },
+    defaultModel: "anthropic/claude-opus-4.6",
   },
 }))

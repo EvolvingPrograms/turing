@@ -1,6 +1,6 @@
-import { describe, expect, test, mock, spyOn } from "bun:test"
+import { describe, expect, test, spyOn } from "bun:test"
 
-import { zeroUsage, addUsage, printUsage } from "./usage"
+import { zeroUsage, addUsage, printUsage, summarizeUsage } from "./usage"
 import type { UsageSummary } from "./usage"
 
 // ---------------------------------------------------------------------------
@@ -113,12 +113,11 @@ describe("addUsage", () => {
 })
 
 // ---------------------------------------------------------------------------
-// summarizeUsage — no responseId
+// summarizeUsage — without providerMetadata
 // ---------------------------------------------------------------------------
 
-describe("summarizeUsage (no responseId)", () => {
-  test("projects basic usage fields", async () => {
-    const { summarizeUsage } = await import("./usage")
+describe("summarizeUsage (no providerMetadata)", () => {
+  test("projects basic usage fields", () => {
     const usage = {
       inputTokens: 100,
       outputTokens: 50,
@@ -126,7 +125,7 @@ describe("summarizeUsage (no responseId)", () => {
       inputTokenDetails: { noCacheTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 0 },
       outputTokenDetails: { textTokens: 50, reasoningTokens: 0 },
     }
-    const result = await summarizeUsage(usage)
+    const result = summarizeUsage(usage)
     expect(result.inputTokens).toBe(100)
     expect(result.outputTokens).toBe(50)
     expect(result.totalTokens).toBe(150)
@@ -136,8 +135,7 @@ describe("summarizeUsage (no responseId)", () => {
     expect(result.cost).toBeUndefined()
   })
 
-  test("projects cacheReadTokens and cacheWriteTokens", async () => {
-    const { summarizeUsage } = await import("./usage")
+  test("projects cacheReadTokens and cacheWriteTokens", () => {
     const usage = {
       inputTokens: 200,
       outputTokens: 100,
@@ -145,14 +143,13 @@ describe("summarizeUsage (no responseId)", () => {
       inputTokenDetails: { noCacheTokens: 0, cacheReadTokens: 1234, cacheWriteTokens: 567 },
       outputTokenDetails: { textTokens: 100, reasoningTokens: 0 },
     }
-    const result = await summarizeUsage(usage)
+    const result = summarizeUsage(usage)
     expect(result.cacheReadTokens).toBe(1234)
     expect(result.cacheWriteTokens).toBe(567)
     expect(result.cost).toBeUndefined()
   })
 
-  test("projects reasoningTokens", async () => {
-    const { summarizeUsage } = await import("./usage")
+  test("projects reasoningTokens", () => {
     const usage = {
       inputTokens: 50,
       outputTokens: 300,
@@ -160,17 +157,17 @@ describe("summarizeUsage (no responseId)", () => {
       inputTokenDetails: { noCacheTokens: 50, cacheReadTokens: 0, cacheWriteTokens: 0 },
       outputTokenDetails: { textTokens: 100, reasoningTokens: 200 },
     }
-    const result = await summarizeUsage(usage)
+    const result = summarizeUsage(usage)
     expect(result.reasoningTokens).toBe(200)
     expect(result.cost).toBeUndefined()
   })
 })
 
 // ---------------------------------------------------------------------------
-// summarizeUsage — with responseId (mock gateway)
+// summarizeUsage — with gateway providerMetadata
 // ---------------------------------------------------------------------------
 
-describe("summarizeUsage (with responseId)", () => {
+describe("summarizeUsage (gateway cost in providerMetadata)", () => {
   const baseUsage = {
     inputTokens: 100,
     outputTokens: 50,
@@ -179,54 +176,32 @@ describe("summarizeUsage (with responseId)", () => {
     outputTokenDetails: { textTokens: 50, reasoningTokens: 0 },
   }
 
-  test("populates cost from gateway.getGenerationInfo", async () => {
-    mock.module("ai", () => ({
-      gateway: {
-        getGenerationInfo: async () => ({
-          totalCost: 0.0042,
-        }),
-      },
-    }))
-
-    const fresh = await import(`./usage?t=${Date.now()}`)
-    const result = await fresh.summarizeUsage(baseUsage, "gen_xyz")
+  test("parses cost string returned by the gateway", () => {
+    const meta = { gateway: { cost: "0.0042" } }
+    const result = summarizeUsage(baseUsage, meta)
     expect(result.cost).toBeCloseTo(0.0042)
   })
 
-  test("retries on first failure and returns cost on second success", async () => {
-    let calls = 0
-    mock.module("ai", () => ({
-      gateway: {
-        getGenerationInfo: async () => {
-          calls++
-          if (calls === 1) throw new Error("temporarily unavailable")
-          return { totalCost: 0.0099 }
-        },
-      },
-    }))
-
-    const fresh = await import(`./usage?t=${Date.now()}`)
-    const result = await fresh.summarizeUsage(baseUsage, "gen_retry")
-    // Should succeed eventually (2nd attempt)
+  test("accepts numeric cost as-is", () => {
+    const meta = { gateway: { cost: 0.0099 } }
+    const result = summarizeUsage(baseUsage, meta)
     expect(result.cost).toBeCloseTo(0.0099)
-    expect(calls).toBeGreaterThanOrEqual(2)
-  }, 10_000)
+  })
 
-  test("always-failing gateway → cost is undefined, no throw", async () => {
-    mock.module("ai", () => ({
-      gateway: {
-        getGenerationInfo: async () => {
-          throw new Error("gateway down")
-        },
-      },
-    }))
-
-    const fresh = await import(`./usage?t=${Date.now()}`)
-    const result = await fresh.summarizeUsage(baseUsage, "gen_fail")
+  test("missing gateway field → cost undefined", () => {
+    const result = summarizeUsage(baseUsage, {})
     expect(result.cost).toBeUndefined()
-    // Numeric fields still populated
-    expect(result.inputTokens).toBe(100)
-  }, 10_000)
+  })
+
+  test("missing cost field → cost undefined", () => {
+    const result = summarizeUsage(baseUsage, { gateway: {} })
+    expect(result.cost).toBeUndefined()
+  })
+
+  test("malformed cost string → cost undefined", () => {
+    const result = summarizeUsage(baseUsage, { gateway: { cost: "not-a-number" } })
+    expect(result.cost).toBeUndefined()
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -249,10 +224,12 @@ describe("printUsage", () => {
 
     printUsage("run 1", usage, usage)
 
-    expect(spy).toHaveBeenCalledTimes(1)
+    // Two calls: leading blank console.log() (separator from streamed output),
+    // then the actual usage summary line.
+    expect(spy).toHaveBeenCalledTimes(2)
 
-    // Reconstruct what was logged — chalk wraps in ANSI codes so join all args
-    const logged = spy.mock.calls[0].join(" ")
+    // Reconstruct what was logged in the summary line — chalk wraps in ANSI codes
+    const logged = spy.mock.calls[1].join(" ")
     expect(logged).toContain("run 1")
     expect(logged).toContain("in=")
     expect(logged).toContain("out=")
