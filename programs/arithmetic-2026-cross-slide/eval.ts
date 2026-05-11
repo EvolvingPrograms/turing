@@ -148,52 +148,54 @@ export function makeMultiply(chunk: number) {
         // products are 2d×1d (max 99×9 = 891), within reliable range.
         // The final add is 4d + 3d. Each step single-purpose.
         //
-        // Format per pair (chunk=2):
-        //   A_i_av*R_t_rv: rvHi*av=P1 rvLo*av=P2 P1*10=P1s P1s+P2=prod
-        // Pair-combining line carries the `[iCurrent/iLast]` row-end
-        // label so the disambiguator stays in the same place as before
-        // (the LAST line of each pair-step).
+        // Format: ONE line per pair-step (single or double). All decomp
+        // and combining happens inline. Putting each pair on its own
+        // line caused the model to lose track mid-pair — it had no
+        // position label on the intermediate decomp lines and jumped
+        // straight to the next row's RESUME after emitting one decomp.
+        // Single-line keeps `[iCurrent/iLast]` as the unambiguous
+        // row-position anchor at the start of every pair-step.
         const useDecomp = chunk === 2
-        const emitDecomp = (label: string, av: number, rv: number, prod: number) => {
-          if (!useDecomp) {
-            log(`${label}=${prod}`)
-            return
-          }
+        const fmtDecomp = (av: number, rv: number, prod: number): string => {
+          if (!useDecomp) return `=${prod}`
           const rvHi = Math.floor(rv / 10)
           const rvLo = rv % 10
           const p1 = av * rvHi   // ≤ 99*9 = 891
           const p2 = av * rvLo   // ≤ 99*9 = 891
           const p1s = p1 * 10
-          // p1s + p2 = prod (sanity: also equal to av * rv)
-          log(`${label}: ${rvHi}*${av}=${p1} ${rvLo}*${av}=${p2} ${p1}*10=${p1s} ${p1s}+${p2}=${prod}`)
+          return `: ${rvHi}*${av}=${p1} ${rvLo}*${av}=${p2} ${p1}*10=${p1s} ${p1s}+${p2}=${prod}`
         }
         while (p < pairs.length) {
           if (p + 1 < pairs.length) {
             const a = emitProduct(p)
             const b = emitProduct(p + 1)
             const pairSum = a.prod + b.prod
-            emitDecomp(`A${a.i}_${padCell(a.av)}*R${a.t}_${padCell(a.rv)}`, a.av, a.rv, a.prod)
-            emitDecomp(`A${b.i}_${padCell(b.av)}*R${b.t}_${padCell(b.rv)}`, b.av, b.rv, b.prod)
+            const aOp = `A${a.i}_${padCell(a.av)}*R${a.t}_${padCell(a.rv)}`
+            const bOp = `A${b.i}_${padCell(b.av)}*R${b.t}_${padCell(b.rv)}`
+            const aDecomp = `${aOp}${fmtDecomp(a.av, a.rv, a.prod)}`
+            const bDecomp = `${bOp}${fmtDecomp(b.av, b.rv, b.prod)}`
+            const lhs = `[${b.i}/${iLast}] ${aDecomp} | ${bDecomp}`
             if (p === 0) {
               sum = pairSum
-              log(`[${b.i}/${iLast}] ${a.prod}+${b.prod}=${pairSum}`)
+              log(`${lhs} ${a.prod}+${b.prod}=${pairSum}`)
             } else {
               const prev = sum
               const newSum = prev + pairSum
-              log(`[${b.i}/${iLast}] ${a.prod}+${b.prod}=${pairSum} ${prev}+${pairSum}=${newSum}`)
+              log(`${lhs} ${a.prod}+${b.prod}=${pairSum} ${prev}+${pairSum}=${newSum}`)
               sum = newSum
             }
             p += 2
           } else {
             const a = emitProduct(p)
-            emitDecomp(`A${a.i}_${padCell(a.av)}*R${a.t}_${padCell(a.rv)}`, a.av, a.rv, a.prod)
+            const aOp = `A${a.i}_${padCell(a.av)}*R${a.t}_${padCell(a.rv)}`
+            const aDecomp = `${aOp}${fmtDecomp(a.av, a.rv, a.prod)}`
             if (p === 0) {
               sum = a.prod
-              log(`[${a.i}/${iLast}] sum=${a.prod}`)
+              log(`[${a.i}/${iLast}] ${aDecomp}`)
             } else {
               const prev = sum
               const newSum = prev + a.prod
-              log(`[${a.i}/${iLast}] ${prev}+${a.prod}=${newSum}`)
+              log(`[${a.i}/${iLast}] ${aDecomp} ${prev}+${a.prod}=${newSum}`)
               sum = newSum
             }
             p += 1
