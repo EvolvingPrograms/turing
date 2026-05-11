@@ -75,8 +75,14 @@ export interface Program<Args extends readonly string[] = string[]> {
    *  a labeled set of lines to render. Useful for verifying that the
    *  model's output decodes to the mathematically-expected value and
    *  showing the formatted result (e.g. A × B = comma-formatted product).
-   *  Return null/undefined to skip. */
-  postTest?: (args: Args, trace: string) => Array<[string, string]> | null | undefined
+   *  Return null/undefined to skip.
+   *
+   *  Args are widened to `readonly string[]` here (rather than the
+   *  program-specific `Args` tuple) so that `Program<[string,string]>`
+   *  and `Program<[]>` both remain assignable to `Program<string[]>`
+   *  in callers like `runProgram` — function-parameter contravariance
+   *  rejects the narrower tuple types otherwise. */
+  postTest?: (args: readonly string[], trace: string) => Array<[string, string]> | null | undefined
   config: ProgramConfig
 }
 
