@@ -57,6 +57,43 @@ export function sliceContinuationPrefill(
 }
 
 /**
+ * Build provider-specific options to disable a model's internal
+ * reasoning/thinking by default. For models without a known reasoning
+ * toggle returns an empty object — those models either don't reason
+ * internally or there is no recognized way to disable it. The slug
+ * prefix (the part before the first slash) is the provider key.
+ *
+ * Recognized providers and their disable shapes:
+ *   anthropic: providerOptions.anthropic.thinking = { type: "disabled" }
+ *   openai:    providerOptions.openai.reasoningEffort = "none"  (or
+ *              caller-supplied effort level for models that need a
+ *              specific minimum, e.g. gpt-5 wants "minimal" not "none")
+ *   deepseek:  providerOptions.deepseek.thinking = { type: "disabled" }
+ *   google:    providerOptions.google.thinkingConfig.thinkingBudget = 0
+ *              (Gemini 2.5; Gemini 3 ignores budget but accepts it)
+ *
+ * Add providers here as their reasoning toggles are discovered.
+ */
+export function disableReasoningOptions(
+  modelSlug: string,
+  opts?: { reasoningEffort?: string }
+): Record<string, Record<string, unknown>> {
+  const provider = modelSlug.split("/")[0]
+  switch (provider) {
+    case "anthropic":
+      return { anthropic: { thinking: { type: "disabled" as const } } }
+    case "openai":
+      return { openai: { reasoningEffort: opts?.reasoningEffort ?? "none" } }
+    case "deepseek":
+      return { deepseek: { thinking: { type: "disabled" as const } } }
+    case "google":
+      return { google: { thinkingConfig: { thinkingBudget: 0 } } }
+    default:
+      return {}
+  }
+}
+
+/**
  * Unified streaming test runner. Routes any gateway model slug
  * (`anthropic/...`, `openai/...`, etc.) and applies provider-specific
  * options based on the slug prefix. Streams output character-by-
@@ -84,11 +121,8 @@ export async function testWithModel({
   let runUsage = zeroUsage()
   const chunkUsages: ReturnType<typeof summarizeUsage>[] = []
 
-  // Provider detection from the slug. Provider-specific options below
-  // are gated by these flags; everything else is provider-agnostic.
+  // Provider detection from the slug.
   const isAnthropic = typeof model === "string" && model.startsWith("anthropic/")
-  const isOpenAI = typeof model === "string" && model.startsWith("openai/")
-  const isDeepSeek = typeof model === "string" && model.startsWith("deepseek/")
 
   // Warm-start: pre-populate fullTrace and derive lastChunk via the
   // slicer so the first API call already sends an assistant prefill +
@@ -114,15 +148,15 @@ export async function testWithModel({
     : undefined
 
   // Provider-specific per-call options. Gateway auto-caching applies
-  // across all providers. For OpenAI reasoning models default to
-  // `reasoningEffort: "none"` so the model emits visible output
-  // immediately rather than burning the output budget on internal
-  // reasoning tokens.
+  // across all providers. For reasoning-capable models we default to
+  // "thinking off" so the model emits visible output immediately
+  // rather than burning the output budget on internal reasoning
+  // tokens — deterministic-trace tasks transcribe/compute, they don't
+  // reason. The shape of "thinking off" varies by provider; see
+  // disableReasoningOptions().
   const providerOptions = {
     gateway: { caching: "auto" as const },
-    ...(isAnthropic && { anthropic: { thinking: { type: "disabled" as const } } }),
-    ...(isOpenAI && { openai: { reasoningEffort: reasoningEffort ?? "none" } }),
-    ...(isDeepSeek && { deepseek: { thinking: { type: "disabled" as const } } }),
+    ...disableReasoningOptions(typeof model === "string" ? model : "", { reasoningEffort }),
   }
 
   while (true) {
