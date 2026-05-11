@@ -200,6 +200,50 @@ The gap to the published literature in absolute operand size is roughly
   system prompt byte-stable across continuations, which is required for
   cache hits.
 
+## Trim continuation: decoupling computation length from context length
+
+The biggest substrate-level shift: when continuation prefills are
+**trimmed** (assistant context bounded to one step's worth instead of
+the whole accumulated trace), total computation size is no longer
+bounded by the model's context window. The bound becomes the size of a
+single **step**.
+
+For a deterministic trace where every state needed to compute step k+1
+is recoverable from (a) a bounded suffix of step k's output and (b) a
+fixed system message, the run can be arbitrarily long as long as one
+step + its self-written state summary fits inside one API call's input
+budget.
+
+What makes this work:
+
+- **Self-anchored steps.** Each step writes its own situational summary
+  at its start, e.g.
+  `RESUME k=N tick=T/16 FIRE|SKIP carry=C prev=O… pairs=P i0=X t0=Y`.
+  On resume the model re-establishes frame from this line alone — no
+  need to attend to anything earlier in the trace.
+- **Boundary-aware slicing.** The trim prefill is sliced from the most
+  recent step whose entry preamble is fully visible (`continueBoundary`
+  + `continueAnchor` — the anchor enforces that e.g. `END_REFRESH` has
+  finished emitting before that boundary qualifies as a slice point;
+  otherwise the slicer backs up to the previous qualifying step).
+- **Externalized counters.** Anything the model would otherwise compute
+  modulo something (FIRE/SKIP cycle, row-end) is written as an
+  explicit bounded counter in the trace (`tick=T/16`, `[i/n]`). The
+  model increments by 1 and wraps. No implicit modular arithmetic.
+- **Cache-stable system.** System message is byte-identical on every
+  call (no per-call instruction, no startToken directive). Training
+  tape is cached once and read on every continuation.
+
+Consequence: context window stops being a frontier. The trace can span
+many API calls without per-call quadratic input cost — each call only
+re-reads (cached) system + (small) prefill + emits one new window of
+tokens. The computable problem size is governed by how big a single
+step's self-summary is, not by total output length.
+
+This is the substrate analogue of a Turing machine writing to an
+unbounded tape: each instruction sees only a finite local window of the
+tape, but the tape can be arbitrarily long.
+
 ## Things to try
 
 - Verify REFRESH-every-block fixes 128×128.

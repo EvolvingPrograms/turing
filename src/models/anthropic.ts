@@ -14,14 +14,20 @@ import type { ModelMessage } from "ai"
  * last incomplete line) — same behavior as before this helper existed.
  *
  * With a boundary regex, returns the suffix of `fullTrace` starting at
- * the last boundary match. This makes the resumed prefill cover a complete
- * in-flight step even when the API cut landed inside one. The boundary
- * regex must match at the start of a line (use the `m` flag).
+ * the last boundary match. The boundary regex must match at the start of
+ * a line (use the `m` flag).
+ *
+ * If `continueAnchor` is provided, a boundary match only qualifies when
+ * `continueAnchor` appears somewhere in `fullTrace` AFTER the match.
+ * This avoids slicing into a boundary whose step is still in progress
+ * (e.g. a FIRE row whose REFRESH block hasn't finished emitting yet).
+ * In that case we back up to the previous qualifying boundary.
  */
 export function sliceContinuationPrefill(
   fullTrace: string,
   completed: string,
-  continueBoundary: RegExp | undefined
+  continueBoundary: RegExp | undefined,
+  continueAnchor?: string
 ): string {
   if (!continueBoundary) return completed
   const flags = continueBoundary.flags.includes("g")
@@ -29,7 +35,15 @@ export function sliceContinuationPrefill(
     : continueBoundary.flags + "g"
   const re = new RegExp(continueBoundary.source, flags)
   let lastMatch = -1
-  for (const m of fullTrace.matchAll(re)) lastMatch = m.index ?? -1
+  for (const m of fullTrace.matchAll(re)) {
+    const idx = m.index ?? -1
+    if (idx < 0) continue
+    if (continueAnchor) {
+      const after = idx + m[0].length
+      if (fullTrace.indexOf(continueAnchor, after) === -1) continue
+    }
+    lastMatch = idx
+  }
   return lastMatch >= 0 ? fullTrace.slice(lastMatch) : completed
 }
 
@@ -40,10 +54,13 @@ export async function testWithClaude({
   model = "anthropic/claude-opus-4.6",
   temperature = 0,
   main = false,
-  startToken,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  startToken: _startToken,
   solution,
   continueBoundary,
+  continueAnchor,
   continuationMode = "trim",
+  warmPrefill,
 }: ClaudeTestOptions): Promise<TestResult> {
   let responseCount = 0
   let runUsage = zeroUsage()
@@ -65,21 +82,26 @@ export async function testWithClaude({
   //
   // In both modes, the full trace is reassembled client-side for solution
   // checking and the final return value.
-  let lastChunk = ""
-  let fullTrace = ""
+  // Warm-start: pre-populate fullTrace and derive lastChunk via the
+  // slicer so the first API call already sends an assistant prefill +
+  // CONTINUE, exactly as if a prior call had overflowed. Skips the
+  // model having to regenerate the warmPrefill rows from scratch.
+  let fullTrace = warmPrefill ?? ""
+  let lastChunk = warmPrefill
+    ? sliceContinuationPrefill(fullTrace, fullTrace, continueBoundary, continueAnchor)
+    : ""
   const stackedMessages: ModelMessage[] = [...messages]
 
-  // Keep system byte-stable across continuations so the breakpoint stays
-  // valid. Optionally append a BEGIN RESPONSE WITH instruction on the
-  // first call only; the instruction is encoded once and never mutated.
-  const effectiveSystem = startToken && system
-    ? `${system}\n---\nBEGIN RESPONSE WITH: ${startToken}\n`
-    : system
-
-  const systemMessage = effectiveSystem
+  // System is byte-stable across every call (no per-call instruction
+  // appended). The training tape contains many full trace examples, so
+  // the model emits the correct first token (e.g. CHUNK=2) from its
+  // in-context prior — no explicit BEGIN RESPONSE WITH needed. This
+  // keeps every call's cache breakpoint identical: one write on call 1,
+  // cache reads on every continuation.
+  const systemMessage = system
     ? {
       role: "system" as const,
-      content: effectiveSystem,
+      content: system,
       providerOptions: {
         anthropic: { cacheControl: { type: "ephemeral" as const } },
       },
@@ -179,15 +201,15 @@ export async function testWithClaude({
           { role: "user", content: "CONTINUE" }
         )
       } else {
-        lastChunk = sliceContinuationPrefill(fullTrace, completed, continueBoundary)
+        lastChunk = sliceContinuationPrefill(fullTrace, completed, continueBoundary, continueAnchor)
       }
 
       console.log("\n")
       console.log(chalk.gray("Continuing response."))
       printUsage(`chunk ${responseCount + 1}`, chunkUsage, runUsage)
-      console.log(chalk.bold(chalk.yellow("Waiting 10s...")))
+      console.log(chalk.bold(chalk.yellow("Waiting 1s...")))
 
-      await new Promise(resolve => setTimeout(resolve, 10_000))
+      await new Promise(resolve => setTimeout(resolve, 1_000))
       responseCount++
       continue
     }

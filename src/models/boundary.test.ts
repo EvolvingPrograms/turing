@@ -77,3 +77,52 @@ test("global flag on caller regex is preserved without duplication", () => {
   expect(result.startsWith("tick=1")).toBe(true)
 })
 
+test("continueAnchor backs up when latest boundary's step is in-progress", () => {
+  // Latest FIRE started but END_REFRESH hasn't appeared yet → slicer
+  // backs up to the previous FIRE whose REFRESH completed.
+  const fullTrace =
+    "FIRE k=0\nREFRESH\nA0\nB0\nEND_REFRESH\nrowwork\nO0\n" +
+    "FIRE k=8\nREFRESH\nA0\nB0\nEND_REFRESH\nrowwork\nO8\n" +
+    "FIRE k=16\nREFRESH\nA0\nB0\n"
+  const completed = "FIRE k=16\nREFRESH\nA0\nB0\n"
+  const result = sliceContinuationPrefill(
+    fullTrace,
+    completed,
+    /^FIRE k=\d+/m,
+    "END_REFRESH"
+  )
+  expect(result.startsWith("FIRE k=8")).toBe(true)
+  expect(result.includes("FIRE k=16")).toBe(true)
+  expect(result.includes("FIRE k=0")).toBe(false)
+})
+
+test("continueAnchor accepts the latest boundary when its step completed", () => {
+  // Latest FIRE has END_REFRESH after it → slice from latest FIRE.
+  const fullTrace =
+    "FIRE k=0\nREFRESH\nA0\nEND_REFRESH\nO0\n" +
+    "FIRE k=8\nREFRESH\nA0\nEND_REFRESH\nrowwork\n"
+  const completed = "FIRE k=8\nREFRESH\nA0\nEND_REFRESH\nrowwork\n"
+  const result = sliceContinuationPrefill(
+    fullTrace,
+    completed,
+    /^FIRE k=\d+/m,
+    "END_REFRESH"
+  )
+  expect(result.startsWith("FIRE k=8")).toBe(true)
+  expect(result.includes("FIRE k=0")).toBe(false)
+})
+
+test("continueAnchor falls back to completed when no boundary qualifies", () => {
+  // First FIRE in trace, REFRESH not yet finished → no qualifying
+  // boundary. Falls back to `completed`.
+  const fullTrace = "FIRE k=0\nREFRESH\nA0\n"
+  const completed = "FIRE k=0\nREFRESH\nA0\n"
+  const result = sliceContinuationPrefill(
+    fullTrace,
+    completed,
+    /^FIRE k=\d+/m,
+    "END_REFRESH"
+  )
+  expect(result).toBe(completed)
+})
+

@@ -2,10 +2,10 @@ import { defineProgram, parseArgs, runProgram } from "../../src/lib"
 import { randInt } from "../utils"
 import { makeMultiply } from "./eval"
 
-// Read --chunk=N via the lib's CLI parser (the same one runProgram uses).
-// All training and test runs in one invocation use the same chunk. To
-// compare e.g. chunk=2 vs chunk=3, run the program twice with the flag
-// changed. Default chunk=2 (base-100, 2x2 mental products).
+// Same CLI shape as arithmetic-2026-cross-memo: --chunk=N selects the
+// base-10^N cell size. The slide variant uses a reversed-B tape (`R`)
+// so per-pair indexing is `A[i] * R[i + t0]` with both indices
+// incrementing in lockstep — no `j = k - i` per pair.
 const opts = parseArgs()
 const CHUNK = parseInt(opts.flags?.chunk ?? "2", 10)
 
@@ -25,21 +25,24 @@ function randomDecimal(digits: number, leadingNonZero = true): string {
 }
 
 await runProgram(defineProgram({
-  name: "arithmetic-2026-cross-memo",
+  name: "arithmetic-2026-cross-slide",
   evaluate: (a, b) => multiply(a, b),
-  // Encode in CHUNK-digit cells, LSB-first — matching the tape format the
-  // model emits inside the trace. Also break across multiple lines (4 cells
-  // per line) to match the tape's TAPE_CHUNK chunking, so the model sees the
-  // exact same shape in [USER] as it must produce in the trace's first lines.
   encode: (a, b) => {
     const TAPE_CHUNK = 4
-    const cellEncode = (s: string): string => {
+    // Slide variant: hand the model BOTH B (normal) and R (B reversed)
+    // so it never has to mentally reverse 64+ cells during REFRESH —
+    // it just transcribes whichever tape is asked for. The reversal is
+    // a deterministic encoder step, not a model task.
+    const cellsLSB = (s: string): string[] => {
       const pad = s.length % CHUNK === 0 ? 0 : CHUNK - (s.length % CHUNK)
       const padded = "0".repeat(pad) + s
       const cells: string[] = []
       for (let i = padded.length; i > 0; i -= CHUNK) {
         cells.push(padded.slice(i - CHUNK, i))
       }
+      return cells
+    }
+    const labelWrap = (cells: string[]): string => {
       const labeled = cells.map((v, i) => `${i}:${v}`)
       const lines: string[] = []
       for (let i = 0; i < labeled.length; i += TAPE_CHUNK) {
@@ -47,21 +50,20 @@ await runProgram(defineProgram({
       }
       return lines.join("\n")
     }
-    return `${cellEncode(a)}\n${cellEncode(b)}`
+    const aCells = cellsLSB(a)
+    const bCells = cellsLSB(b)
+    const rCells = bCells.slice().reverse()
+    return `A:\n${labelWrap(aCells)}\nB:\n${labelWrap(bCells)}\nR:\n${labelWrap(rCells)}`
   },
   display: (arg) => BigInt(arg).toLocaleString("en-US"),
-  // Trim continuations, sliced from the most recent FIRE tick. The trace
-  // emits a `RESUME k=N carry=C prev=O<k-1>_..` line right after every
-  // `k=N` header, which gives the model an in-voice situational summary
-  // at every row boundary. Combined with `[i/n]` at line start, this lets
-  // the model re-establish frame from a short prefill alone — no need to
-  // keep the entire prior conversation in context (stack mode).
   continuationMode: "trim",
   continueBoundary: /^RESUME k=\d+ tick=0\/\d+ FIRE /m,
   continueAnchor: "END_REFRESH",
   postTest: (args, trace) => {
     const [aStr, bStr] = args
     const expected = BigInt(aStr) * BigInt(bStr)
+    // Parse the model's RETURN line(s): "RETURN O0_xx O1_xx O2_xx ..."
+    // (may span multiple physical lines if the output tape was wrapped).
     const ret = trace.match(/^RETURN\s+([\s\S]+?)(?:\n\n|\n*$)/m)
     if (!ret) return [["error", "no RETURN line found in trace"]]
     const tokens = ret[1].split(/\s+/).filter(Boolean)
@@ -90,11 +92,6 @@ await runProgram(defineProgram({
     ["123456", "789012"],
     ["13579246", "8642"],
     ["1234567890", "9876543210"],
-    // 20-dig × 20-dig — 10 base-100 cells per operand. At TAPE_CHUNK=8 this
-    // crosses the single-line tape threshold (10 cells = 2 lines), so the
-    // model sees what a multi-line REFRESH looks like in training. Without
-    // this, the model extrapolates poorly from 1-line tapes to 8-line ones
-    // at large operand sizes and tends to collapse them back to a single line.
     ["12345678901234567890", "98765432109876543210"],
   ],
   generateTestInputs: (opts) => {
@@ -115,6 +112,6 @@ await runProgram(defineProgram({
     temperature: 0,
     maxTokens: 4096,
     defaultModel: "anthropic/claude-opus-4.6",
-    systemPreamble: "COMPUTER_MODE: NEVER WRITE HUMAN LANGUAGE TEXT RESPONSES; ONLY COMPUTE PROGRAM",
+    systemPreamble: "COMPUTER_MODE: NEVER WRITE HUMAN LANGUAGE",
   },
 }))

@@ -55,10 +55,10 @@ await runProgram(defineProgram({
     return `A=${a}\n${cellEncode(a)}\nB=${b}\n${cellEncode(b)}`
   },
   display: (arg) => BigInt(arg).toLocaleString("en-US"),
-  // Stack continuations — see cross-memo/index.ts for the rationale.
-  // Each chunk is appended with an ephemeral cache marker; the full prior
-  // trace stays in context on every call.
-  continuationMode: "stack",
+  // Trim continuations with FIRE-tick boundary slicing — the per-row
+  // RESUME line + `[i/n]` labels give the model enough frame to continue
+  // from a short prefill. See cross-memo/index.ts for the rationale.
+  continuationMode: "trim",
   continueBoundary: /^tick=\d+ \[FIRE\]/m,
   trainingInputs: [
     // Sub-threshold: triggers pure cross-memo path (no Karatsuba).

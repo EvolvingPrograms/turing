@@ -105,6 +105,10 @@ export function makeMultiply(chunk: number, karatsubaThreshold: number) {
         log(`tick=${tick} [SKIP]`)
       }
       log(`k=${k}`)
+      // RESUME line: per-row self-written frame summary. See
+      // cross-memo/eval.ts for the rationale.
+      const prev = k === 0 ? "none" : `O${k - 1}_${padCell(out[k - 1])}`
+      log(`RESUME k=${k} carry=${carry} prev=${prev}`)
 
       const pairs: Array<[number, number]> = []
       for (let i = Math.max(0, k - (M - 1)); i <= Math.min(N - 1, k); i++) {
@@ -120,11 +124,9 @@ export function makeMultiply(chunk: number, karatsubaThreshold: number) {
           const [i, j] = pairs[idx]
           return { i, j, av: A[i], bv: B[j], prod: A[i] * B[j] }
         }
-        // [i/n] at line START — front-loaded row position. See
-        // cross-memo/eval.ts for rationale. Left-to-right principle: the
-        // model commits to its row position before computing the rest of
-        // the line, so the position label constrains the line's contents
-        // and the next-line branch (more pairs vs close row).
+        // [i/n] front-loaded; no trailing `sum=N` restatement (the
+        // running sum is the trailing `=N` on the line already). See
+        // cross-memo/eval.ts for full rationale.
         const n = pairs.length
         while (p < pairs.length) {
           if (p + 1 < pairs.length) {
@@ -134,10 +136,10 @@ export function makeMultiply(chunk: number, karatsubaThreshold: number) {
             const lhs = `[${consumed}/${n}] A${a.i}_${padCell(a.av)}*B${a.j}_${padCell(a.bv)}=${a.prod} A${b.i}_${padCell(b.av)}*B${b.j}_${padCell(b.bv)}=${b.prod}`
             if (p === 0) {
               sum = pairSum
-              log(`${lhs} ${a.prod}+${b.prod}=${pairSum} sum=${pairSum}`)
+              log(`${lhs} ${a.prod}+${b.prod}=${pairSum}`)
             } else {
               const prev = sum, newSum = prev + pairSum
-              log(`${lhs} ${a.prod}+${b.prod}=${pairSum} ${prev}+${pairSum}=${newSum} sum=${newSum}`)
+              log(`${lhs} ${a.prod}+${b.prod}=${pairSum} ${prev}+${pairSum}=${newSum}`)
               sum = newSum
             }
             p += 2
@@ -147,10 +149,10 @@ export function makeMultiply(chunk: number, karatsubaThreshold: number) {
             const lhs = `[${consumed}/${n}] A${a.i}_${padCell(a.av)}*B${a.j}_${padCell(a.bv)}=${a.prod}`
             if (p === 0) {
               sum = a.prod
-              log(`${lhs} sum=${a.prod}`)
+              log(lhs)
             } else {
               const prev = sum, newSum = prev + a.prod
-              log(`${lhs} ${prev}+${a.prod}=${newSum} sum=${newSum}`)
+              log(`${lhs} ${prev}+${a.prod}=${newSum}`)
               sum = newSum
             }
             p += 1
@@ -264,7 +266,6 @@ export function makeMultiply(chunk: number, karatsubaThreshold: number) {
       output += args.join("\n") + "\n"
     }
 
-    log("START")
     log(`A=${a} B=${b}`)
     const result = karatsubaMultiply(a, b, log, true)
     // Karatsuba path: result already exists as integer in the trace

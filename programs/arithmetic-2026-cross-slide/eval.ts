@@ -1,30 +1,23 @@
 import { fromPositional } from "../encoding"
 
 /**
- * Cross-multiplication with memoized base — same Urdhva-Tiryak / Trachtenberg
- * algorithm as arithmetic-2026-cross, but operates on `chunk`-digit cells
- * instead of single decimal digits. The model is asked to memorize / mentally
- * compute each cell-by-cell multiplication (e.g. with chunk=2, products like
- * 47*83=3901 are emitted as a single line). The cross algorithm is unchanged
- * in shape; only the unit of computation changes.
+ * Cross-multiplication via the Tanton "sliding strip" reformulation.
  *
- * - chunk=1 → equivalent to plain arithmetic-2026-cross (base 10).
- * - chunk=2 → base-100, 2-digit × 2-digit memorized (max 99*99=9801).
- * - chunk=3 → base-1000, 3-digit × 3-digit memorized (max 999*999=998001).
- * - chunk=4+ → progressively more aggressive; relies on Claude's reliability
- *   for larger mental multiplications.
+ * Same convolution as arithmetic-2026-cross-memo, but B is reversed
+ * into an `R` tape so that the model never has to compute `j = k - i`.
+ * For each k, the pair at index i is `A[i] * R[t]` where
+ *   t = i + t0   and   t0 = M-1-k
+ * Both `i` and `t` increment by 1 across a row — monotonic in lockstep.
+ * `t0` is written ONCE per row in the RESUME line so the model only
+ * subtracts once per row instead of once per pair.
  *
- * Returns a multiply function bound to the given chunk size. Use the factory
- * so each invocation of the program can vary chunk via CLI flag without
- * mutating module-level state.
+ * Mathematically R[t] = B[M-1-t], which gives A[i] * R[t] =
+ * A[i] * B[M-1-t] = A[i] * B[M-1-(i+M-1-k)] = A[i] * B[k-i] — the
+ * standard convolution coefficient at diagonal k.
  */
 
 type CellTape = number[]
 
-// Cells per line in tape display. Wider lines = fewer lines per tape, which
-// matters for REFRESH reliability: the model can't count 16+ structurally-
-// identical lines accurately. With TAPE_CHUNK=8, a 64-cell tape is 8 lines;
-// each REFRESH is ~17 lines total (A + B + markers), within counting range.
 const TAPE_CHUNK = 8
 
 export function makeMultiply(chunk: number) {
@@ -68,75 +61,67 @@ export function makeMultiply(chunk: number) {
     return acc
   }
 
-  function multiplyCross(
+  function multiplySlide(
     A: CellTape,
     B: CellTape,
     log: (...args: string[]) => void
   ): CellTape {
     const N = A.length
     const M = B.length
+    // R[t] = B[M-1-t]. Built once; emitted in every REFRESH.
+    const R: CellTape = B.slice().reverse()
     const out: CellTape = []
     let carry = 0
-
-    // REFRESH every REFRESH_INTERVAL iterations. Each iteration emits an
-    // explicit `tick=N [FIRE|SKIP]` line *before* the k= header. tick cycles
-    // 0..REFRESH_INTERVAL-1. When tick=0 the action is [FIRE] and a REFRESH
-    // block follows; otherwise the action is [SKIP] and the iteration proceeds
-    // directly to its k= header.
-    //
-    // The point: the model never has to internally track "is this a refresh
-    // iteration." Every iteration tells the model its own action explicitly.
-    // Cycle position is bounded (0..7) and incremented one-at-a-time. This
-    // is the deterministic-single-direction principle applied to the refresh
-    // trigger.
     const REFRESH_INTERVAL = 16
 
     for (let k = 0; k < N + M - 1; k++) {
-      const pairs: Array<[number, number]> = []
-      for (let i = Math.max(0, k - (M - 1)); i <= Math.min(N - 1, k); i++) {
-        pairs.push([i, k - i])
+      const pairs: Array<{ i: number; t: number }> = []
+      const iMin = Math.max(0, k - (M - 1))
+      const iMax = Math.min(N - 1, k)
+      for (let i = iMin; i <= iMax; i++) {
+        // t = i + (M-1-k). Increments with i by 1.
+        pairs.push({ i, t: i + (M - 1 - k) })
       }
 
-      // Consolidated row header. One line carries all the row-frame
-      // state the model needs: k, action (FIRE re-prints operand tape;
-      // SKIP doesn't), carry-in, previous output cell, and the row's
-      // pair count. `pairs=N` is precomputed here so per-line [i/n]
-      // labels can just COPY n instead of recomputing the diagonal
-      // bound on every pair line — that recomputation was the source
-      // of the off-by-one [i/49]-vs-[i/50] failure at large k.
-      // `tick=N/REFRESH_INTERVAL` is an externalized cycle counter —
-      // model increments by 1 per row and wraps at REFRESH_INTERVAL,
-      // emitting FIRE when tick=0. Replaces an implicit `k % 16` check
-      // the model got wrong at large k (writing SKIP at k=16/64/etc.
-      // when it should be FIRE).
       const tick = k % REFRESH_INTERVAL
       const isFire = tick === 0
       const action = isFire ? "FIRE" : "SKIP"
       const prev = k === 0 ? "none" : `O${k - 1}_${padCell(out[k - 1])}`
-      log(`RESUME k=${k} tick=${tick}/${REFRESH_INTERVAL} ${action} carry=${carry} prev=${prev} pairs=${pairs.length}`)
+      // tick=N/M is an externalized 0..M-1 cycle counter — model
+      // increments by 1 per row and wraps at M. FIRE when tick=0.
+      // Replaces an implicit `k % REFRESH_INTERVAL` computation per
+      // row, which the model got wrong at large k (writing SKIP at
+      // k=64 instead of FIRE).
+      // i0, t0 = starting indices for this row. Both increment by 1
+      // per pair (lockstep). One of i0, t0 is always 0:
+      //   first half (k < M-1): i0=0, t0=M-1-k
+      //   second half (k >= M-1): i0=k-M+1, t0=0
+      const i0 = iMin
+      const t0 = i0 + (M - 1 - k)
+      log(`RESUME k=${k} tick=${tick}/${REFRESH_INTERVAL} ${action} carry=${carry} prev=${prev} pairs=${pairs.length} i0=${i0} t0=${t0}`)
       if (isFire) {
         log("REFRESH")
         log(tapeFmt(A, "A"))
-        log(tapeFmt(B, "B"))
+        log(tapeFmt(R, "R"))
         log("END_REFRESH")
       }
 
       let sum = 0
       if (pairs.length === 0) {
-        log("sum=0")
+        log("0")
       } else {
         let p = 0
         const emitProduct = (idx: number) => {
-          const [i, j] = pairs[idx]
-          return { i, j, av: A[i], bv: B[j], prod: A[i] * B[j] }
+          const { i, t } = pairs[idx]
+          return { i, t, av: A[i], rv: R[t], prod: A[i] * R[t] }
         }
-
-        // Each line starts with `[i/n]` — i = pairs consumed AFTER
-        // this line, n = total pairs in this row. `n` is the same value
-        // every line; the model COPIES it from the RESUME line's
-        // `pairs=N` field rather than recomputing the diagonal bound.
-        // Row-end is unambiguous: `[n/n]` is the last pair line, next
-        // line is `sum+c=`.
+        // `[i/n]` front-loaded — load-bearing row-position anchor.
+        // `n` is copied from RESUME's `pairs=N` (no recomputation per
+        // line). On continuation the model reads the previous line's
+        // [i/n] and emits the next as [i+2/n] (or [i+1/n] single-pair).
+        // Removing this label let the model re-emit RESUME mid-row at
+        // large k; the explicit counter forces a non-RESUME shape on
+        // the next emission.
         const n = pairs.length
         while (p < pairs.length) {
           if (p + 1 < pairs.length) {
@@ -144,7 +129,7 @@ export function makeMultiply(chunk: number) {
             const b = emitProduct(p + 1)
             const pairSum = a.prod + b.prod
             const consumed = p + 2
-            const lhs = `[${consumed}/${n}] A${a.i}_${padCell(a.av)}*B${a.j}_${padCell(a.bv)}=${a.prod} A${b.i}_${padCell(b.av)}*B${b.j}_${padCell(b.bv)}=${b.prod}`
+            const lhs = `[${consumed}/${n}] A${a.i}_${padCell(a.av)}*R${a.t}_${padCell(a.rv)}=${a.prod} A${b.i}_${padCell(b.av)}*R${b.t}_${padCell(b.rv)}=${b.prod}`
             if (p === 0) {
               sum = pairSum
               log(`${lhs} ${a.prod}+${b.prod}=${pairSum}`)
@@ -158,7 +143,7 @@ export function makeMultiply(chunk: number) {
           } else {
             const a = emitProduct(p)
             const consumed = p + 1
-            const lhs = `[${consumed}/${n}] A${a.i}_${padCell(a.av)}*B${a.j}_${padCell(a.bv)}=${a.prod}`
+            const lhs = `[${consumed}/${n}] A${a.i}_${padCell(a.av)}*R${a.t}_${padCell(a.rv)}=${a.prod}`
             if (p === 0) {
               sum = a.prod
               log(lhs)
@@ -175,26 +160,21 @@ export function makeMultiply(chunk: number) {
 
       const total = sum + carry
       log(`sum+c${carry}=${total}`)
-
       const cell = total % CELL_MAX
       const newCarry = Math.floor(total / CELL_MAX)
       out.push(cell)
       log(`O${k}_${padCell(cell)} c${newCarry}`)
-
       carry = newCarry
     }
 
     out.push(carry)
-    log(`k=${N + M - 1}`)
+    log(`RESUME k=${N + M - 1} END carry=${carry}`)
     log(`O${N + M - 1}_${padCell(carry)}`)
 
     return out
   }
 
-  return function multiply(
-    numA: number | string,
-    numB: number | string
-  ): string {
+  return function multiply(numA: number | string, numB: number | string): string {
     const decA = typeof numA === "string"
       ? (numA.includes(":") ? fromPositional(numA) : numA)
       : numA.toString(10)
@@ -211,7 +191,7 @@ export function makeMultiply(chunk: number) {
     }
 
     log(`CHUNK=${chunk}`)
-    const productTape = multiplyCross(tapeA, tapeB, log)
+    const productTape = multiplySlide(tapeA, tapeB, log)
 
     log(`RETURN ${tapeFmt(productTape, "O")}`)
 
@@ -227,6 +207,4 @@ export function makeMultiply(chunk: number) {
   }
 }
 
-// Default export keeps the same shape as other programs' eval defaults so
-// scripts that call eval directly without specifying a chunk still work.
 export default makeMultiply(2)

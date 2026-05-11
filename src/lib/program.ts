@@ -3,6 +3,11 @@ export interface ProgramConfig {
   maxTokens?: number
   /** Full gateway model slug used when no slug is passed on the CLI. e.g. "anthropic/claude-opus-4.6". */
   defaultModel: string
+  /** Optional preamble prepended to the system message (training tape).
+   *  Byte-stable across continuations, so caching is preserved. Useful for
+   *  forbidding prose / "narration drift" via an explicit directive that
+   *  appears in the system on every call. */
+  systemPreamble?: string
 }
 
 /**
@@ -39,6 +44,13 @@ export interface Program<Args extends readonly string[] = string[]> {
    *  Must be a multiline (`m` flag) regex that matches at line start.
    *  Only consulted when continuationMode === "trim". */
   continueBoundary?: RegExp
+  /** Optional anchor string used together with `continueBoundary`. A
+   *  boundary match only qualifies as a slice point when this string
+   *  appears later in the trace. Prevents slicing into an in-progress
+   *  step (e.g. a FIRE row whose REFRESH block hasn't finished
+   *  emitting yet); the slicer backs up to the previous qualifying
+   *  boundary in that case. */
+  continueAnchor?: string
   /** How to assemble messages across overflow continuations.
    *
    *  - "trim" (default): replace the assistant prefill each continuation
@@ -55,6 +67,12 @@ export interface Program<Args extends readonly string[] = string[]> {
    *    long traces (128-digit cross-memo, 32-digit kara-memo) where the
    *    model needs the full prior pattern to disambiguate continuation. */
   continuationMode?: "trim" | "stack"
+  /** Optional: parse the model's trace at the end of a test and return
+   *  a labeled set of lines to render. Useful for verifying that the
+   *  model's output decodes to the mathematically-expected value and
+   *  showing the formatted result (e.g. A × B = comma-formatted product).
+   *  Return null/undefined to skip. */
+  postTest?: (args: Args, trace: string) => Array<[string, string]> | null | undefined
   config: ProgramConfig
 }
 

@@ -5,6 +5,32 @@ import { addUsage, printUsage, zeroUsage, type UsageSummary } from "../models/us
 import { tqdm } from "../progress"
 import { backoff } from "../backoff"
 import { resolve } from "path"
+import chalk from "chalk"
+
+// Pretty-print a key/value section without using console.table — tables
+// look terrible when one of the values is a 145-digit number that wraps
+// the entire terminal. Long single-line values are wrapped with hanging
+// indent; multi-line values render each line indented under the label.
+function printSection(title: string, rows: Array<[string, string]>) {
+  const labelW = Math.max(...rows.map(([k]) => k.length))
+  const cols = (process.stdout.columns ?? 100) - labelW - 4
+  const wrap = (s: string, width: number): string[] => {
+    if (s.length <= width) return [s]
+    const out: string[] = []
+    for (let i = 0; i < s.length; i += width) out.push(s.slice(i, i + width))
+    return out
+  }
+  console.log(chalk.bold(chalk.cyan(title)))
+  for (const [key, value] of rows) {
+    const valueLines = value.split("\n").flatMap(ln => wrap(ln, Math.max(40, cols)))
+    const label = `  ${chalk.bold(key.padEnd(labelW))}  `
+    const indent = " ".repeat(label.length - (chalk.bold("").length))
+    console.log(label + valueLines[0])
+    for (let i = 1; i < valueLines.length; i++) {
+      console.log(indent + valueLines[i])
+    }
+  }
+}
 
 export interface RunOptions {
   /** Provider key (e.g. "anthropic") OR a full slug containing "/" (e.g. "anthropic/claude-opus-4.6"). */
@@ -110,6 +136,13 @@ export async function runProgram<Args extends readonly string[]>(
 
   // Format training tape in memory
   const trainingTape = await formatTrainingTape(program)
+  // System content sent to the API: optional preamble + training tape.
+  // Assembled here (not inside formatTrainingTape) so the training-tape
+  // file written by --debug stays just the examples, and the API-call
+  // payload is the thing that combines call-site directives with data.
+  const systemContent = program.config.systemPreamble
+    ? `${program.config.systemPreamble}\n\n${trainingTape}`
+    : trainingTape
 
   // In debug mode, write tape and test set to disk
   if (debug) {
@@ -136,7 +169,7 @@ export async function runProgram<Args extends readonly string[]>(
     const end = Math.min(start + batchSize, runs)
     const adjustedBatchSize = end - start
 
-    const promises: Promise<{ pass: boolean; metadata: unknown }>[] = Array.from({ length: adjustedBatchSize }, (_, i) => {
+    const promises: Promise<{ pass: boolean; metadata: unknown; text: string; args: string[] }>[] = Array.from({ length: adjustedBatchSize }, (_, i) => {
       const worker = i
       const args = testInputs[start + i]
 
@@ -153,6 +186,31 @@ export async function runProgram<Args extends readonly string[]>(
           )
         }
 
+        // --from=<k>: skip ahead. Pre-populate the trace with the
+        // correct solution up to (but not including) the line that
+        // says `RESUME k=<from> ...`. The model resumes by emitting
+        // that line and continues from there. Lets you verify the
+        // heaviest middle rows without waiting for the easy ramp-up.
+        let warmPrefill: string | undefined
+        const fromKStr = opts.flags?.from
+        if (fromKStr !== undefined) {
+          const fromK = parseInt(fromKStr, 10)
+          if (!Number.isFinite(fromK)) {
+            throw new Error(`--from=N must be an integer, got: ${fromKStr}`)
+          }
+          const lines = solution.split("\n")
+          const resumeRe = /^RESUME k=(\d+)\b/
+          let cut = -1
+          for (let i = 0; i < lines.length; i++) {
+            const m = lines[i].match(resumeRe)
+            if (m && parseInt(m[1], 10) === fromK) { cut = i; break }
+          }
+          if (cut < 0) {
+            throw new Error(`--from=${fromK}: no "RESUME k=${fromK}" found in solution`)
+          }
+          warmPrefill = lines.slice(0, cut).join("\n") + "\n"
+        }
+
         const params = {
           model: resolvedModel,
           debug: true,
@@ -162,32 +220,47 @@ export async function runProgram<Args extends readonly string[]>(
           max_tokens,
         }
 
-        const encodedLines = input.split("\n")
-        const argRows = Array.from(args, (arg, idx) => {
-          const row: Record<string, string> = {}
-          if (program.display) row.decimal = program.display(arg, idx)
-          row.raw = arg
-          row.encoded = encodedLines[idx] ?? ""
-          return row
-        })
-
         console.log()
-        console.log(`── test ${start + i + 1}/${runs} (worker ${worker}) ──`)
-        console.table(argRows)
-        console.table({ ...params, startToken })
-        console.log(`Starting worker ${worker}...`)
+        console.log(chalk.bold(chalk.magenta(`── test ${start + i + 1}/${runs} (worker ${worker}) ──`)))
+        for (let idx = 0; idx < args.length; idx++) {
+          const arg = args[idx]
+          const rows: Array<[string, string]> = []
+          if (program.display) rows.push(["decimal", program.display(arg, idx)])
+          rows.push(["raw", arg])
+          // `input` is the full encoded user message; for multi-arg
+          // programs the encoder may produce a single multi-line block
+          // covering all args (with labels like A: / B: / R:). Show the
+          // whole encoded block once under the first arg rather than
+          // trying to slice it line-by-line.
+          if (idx === 0) rows.push(["encoded", input])
+          console.log()
+          printSection(`Arg ${idx}`, rows)
+        }
+        console.log()
+        printSection("Params", [
+          ["model", String(params.model)],
+          ["temperature", String(params.temperature)],
+          ["max_tokens", String(params.max_tokens)],
+          ["worker", String(params.worker)],
+          ["startToken", String(startToken)],
+          ...(warmPrefill ? [["warmStart", `from k=${opts.flags?.from} (${warmPrefill.length} chars pre-populated)`] as [string, string]] : []),
+        ])
+        console.log()
+        console.log(chalk.dim(`Starting worker ${worker}...`))
 
-        const { pass, metadata } = await startTest({
-          system: trainingTape,
+        const result = await startTest({
+          system: systemContent,
           startToken,
           messages,
           solution,
           continueBoundary: program.continueBoundary,
+          continueAnchor: program.continueAnchor,
           continuationMode: program.continuationMode,
+          warmPrefill,
           ...params,
         })
 
-        return { pass, metadata }
+        return { pass: result.pass, metadata: result.metadata, text: result.text, args: [...args] as string[] }
       })
     })
 
@@ -195,7 +268,7 @@ export async function runProgram<Args extends readonly string[]>(
     await new Promise((resolve) => setTimeout(resolve, 1000))
 
     for (const [i, result] of results.entries()) {
-      const { pass, metadata } = result
+      const { pass, metadata, text, args } = result
       if (pass) correct++
 
       const runUsage =
@@ -207,14 +280,23 @@ export async function runProgram<Args extends readonly string[]>(
         totalUsage = addUsage(totalUsage, runUsage)
         printUsage(`run ${start + i + 1}`, runUsage, totalUsage)
       }
+
+      if (pass && program.postTest) {
+        const rows = program.postTest(args as unknown as Args, text)
+        if (rows && rows.length > 0) {
+          console.log()
+          printSection(`Test ${start + i + 1} verification`, rows)
+        }
+      }
     }
 
-    const Test = `${end} / ${runs}`
-    const Correct = `${correct} / ${end}`
-    const Accuracy = `${(correct / end).toFixed(2)}`
-
+    const accuracy = (correct / end).toFixed(2)
     console.log()
-    console.table({ Test, Correct, Accuracy })
+    printSection("Progress", [
+      ["Test", `${end} / ${runs}`],
+      ["Correct", `${correct} / ${end}`],
+      ["Accuracy", accuracy],
+    ])
     console.log()
   }
 
