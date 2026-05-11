@@ -36,8 +36,25 @@ export interface Program<Args extends readonly string[] = string[]> {
    *  On overflow / continuation, the assistant prefill is sliced from the
    *  last match in the full trace — so the model always resumes with a
    *  complete in-flight step in context, even when the cut landed mid-step.
-   *  Must be a multiline (`m` flag) regex that matches at line start. */
+   *  Must be a multiline (`m` flag) regex that matches at line start.
+   *  Only consulted when continuationMode === "trim". */
   continueBoundary?: RegExp
+  /** How to assemble messages across overflow continuations.
+   *
+   *  - "trim" (default): replace the assistant prefill each continuation
+   *    with a single chunk derived from the latest output (sliced from
+   *    `continueBoundary` when set). Messages stay at 3 entries. Cheap
+   *    but discards earlier chunks — risky for very long traces where
+   *    pattern calibration across many prior steps matters.
+   *
+   *  - "stack": append each completed chunk as its own assistant message
+   *    with an anthropic ephemeral cacheControl marker. Messages grow:
+   *    [user, asst(c1), user(CONT), asst(c2), user(CONT), ...]. The full
+   *    trace stays in context on every call; gateway auto-caching keeps
+   *    cost low because every prior chunk is cache-resident. Use for
+   *    long traces (128-digit cross-memo, 32-digit kara-memo) where the
+   *    model needs the full prior pattern to disambiguate continuation. */
+  continuationMode?: "trim" | "stack"
   config: ProgramConfig
 }
 

@@ -5,6 +5,7 @@ import { streamText } from "ai"
 import { checkRollingSolution } from "./rolling"
 import { addUsage, printUsage, summarizeUsage, zeroUsage } from "./usage"
 import type { ClaudeTestOptions, TestResult } from "./types"
+import type { ModelMessage } from "ai"
 
 /**
  * Compute the assistant prefill for a continuation after an overflow.
@@ -42,21 +43,31 @@ export async function testWithClaude({
   startToken,
   solution,
   continueBoundary,
+  continuationMode = "trim",
 }: ClaudeTestOptions): Promise<TestResult> {
   let responseCount = 0
   let runUsage = zeroUsage()
   const chunkUsages: ReturnType<typeof summarizeUsage>[] = []
 
-  // Rolling prefill: every continuation sends exactly
-  //   { system (cached), messages: [...initial, { assistant: lastChunk }] }
-  // where lastChunk is the previous call's output (truncated to last
-  // complete line). No cacheControl on messages — only the system has a
-  // breakpoint. The trace itself contains enough state (REFRESH operands,
-  // running carry/sum) to continue from the last chunk alone; earlier
-  // chunks are not re-sent. Full trace is reassembled client-side for
-  // the final return value.
+  // Two continuation modes:
+  //
+  //  "trim": every continuation sends exactly 3 messages —
+  //    { system (cached), [initial user, assistant: lastChunk, user: CONTINUE] }
+  //    lastChunk REPLACES each iteration (sliced from continueBoundary when set).
+  //    Cheap, but earlier chunks are not in context. Risky for long traces.
+  //
+  //  "stack": each completed chunk is APPENDED as its own assistant message
+  //    with an anthropic ephemeral cacheControl marker, followed by a CONTINUE
+  //    user turn. Messages grow:
+  //      [user, asst(c1,cache), user(CONT), asst(c2,cache), user(CONT), ...]
+  //    Gateway auto-caching keeps cost low because every prior chunk is
+  //    cache-resident. The full trace stays in context on every call.
+  //
+  // In both modes, the full trace is reassembled client-side for solution
+  // checking and the final return value.
   let lastChunk = ""
   let fullTrace = ""
+  const stackedMessages: ModelMessage[] = [...messages]
 
   // Keep system byte-stable across continuations so the breakpoint stays
   // valid. Optionally append a BEGIN RESPONSE WITH instruction on the
@@ -80,21 +91,27 @@ export async function testWithClaude({
     console.log(chalk.bold(chalk.yellow(`Response ${responseCount + 1}:`)))
     console.log()
 
-    // Opus 4.6+ rejects assistant-terminal prefill ("conversation must end
-    // with a user message"). So on continuation we send the last chunk as
-    // an assistant turn and append a user CONTINUE prompt. The lastChunk
-    // replaces (not appends) — messages never grow beyond 3 entries.
-    const callMessages = lastChunk
-      ? [
-        ...messages,
-        { role: "assistant" as const, content: lastChunk },
-        { role: "user" as const, content: "CONTINUE" },
-      ]
-      : messages
+    // Opus 4.6+ rejects assistant-terminal prefill — every call must end
+    // with a user message. We assemble accordingly per mode.
+    let callMessages: ModelMessage[]
+    if (continuationMode === "stack") {
+      // `stackedMessages` already contains the full conversation history,
+      // including any prior asst(chunk N) + user(CONTINUE) pairs appended
+      // by the overflow branch below.
+      callMessages = stackedMessages
+    } else {
+      // Trim mode: 3 messages, last assistant chunk + CONTINUE.
+      callMessages = lastChunk
+        ? [
+          ...messages,
+          { role: "assistant" as const, content: lastChunk },
+          { role: "user" as const, content: "CONTINUE" },
+        ]
+        : messages
+    }
 
     // `output` tracks the FULL trace client-side (for the rolling solution
-    // check, which compares the trace from START). The API only ever sees
-    // `lastChunk` as the prefill — never the full trace.
+    // check, which compares the trace from START).
     let output = fullTrace
 
     const result = streamText({
@@ -105,6 +122,10 @@ export async function testWithClaude({
       temperature,
       providerOptions: {
         anthropic: { thinking: { type: "disabled" } },
+        // In stack mode the conversation grows; rely on gateway auto-cache
+        // to keep cost flat across continuations. Per-chunk cacheControl
+        // markers are attached in the overflow branch below.
+        ...(continuationMode === "stack" && { gateway: { caching: "auto" as const } }),
       },
     })
 
@@ -142,7 +163,24 @@ export async function testWithClaude({
       // Everything before it is a clean suffix of the trace.
       const completed = text.split("\n").slice(0, -1).join("\n") + "\n"
       fullTrace += completed
-      lastChunk = sliceContinuationPrefill(fullTrace, completed, continueBoundary)
+
+      if (continuationMode === "stack") {
+        // Append this chunk as its own assistant turn with a cache marker,
+        // then a CONTINUE user turn. Subsequent calls see the entire
+        // accumulated history; gateway auto-cache keeps cost flat.
+        stackedMessages.push(
+          {
+            role: "assistant",
+            content: completed,
+            providerOptions: {
+              anthropic: { cacheControl: { type: "ephemeral" as const } },
+            },
+          },
+          { role: "user", content: "CONTINUE" }
+        )
+      } else {
+        lastChunk = sliceContinuationPrefill(fullTrace, completed, continueBoundary)
+      }
 
       console.log("\n")
       console.log(chalk.gray("Continuing response."))

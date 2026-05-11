@@ -120,11 +120,18 @@ export function makeMultiply(chunk: number, karatsubaThreshold: number) {
           const [i, j] = pairs[idx]
           return { i, j, av: A[i], bv: B[j], prod: A[i] * B[j] }
         }
+        // [i/n] at line START — front-loaded row position. See
+        // cross-memo/eval.ts for rationale. Left-to-right principle: the
+        // model commits to its row position before computing the rest of
+        // the line, so the position label constrains the line's contents
+        // and the next-line branch (more pairs vs close row).
+        const n = pairs.length
         while (p < pairs.length) {
           if (p + 1 < pairs.length) {
             const a = emitProduct(p), b = emitProduct(p + 1)
             const pairSum = a.prod + b.prod
-            const lhs = `A${a.i}_${padCell(a.av)}*B${a.j}_${padCell(a.bv)}=${a.prod} A${b.i}_${padCell(b.av)}*B${b.j}_${padCell(b.bv)}=${b.prod}`
+            const consumed = p + 2
+            const lhs = `[${consumed}/${n}] A${a.i}_${padCell(a.av)}*B${a.j}_${padCell(a.bv)}=${a.prod} A${b.i}_${padCell(b.av)}*B${b.j}_${padCell(b.bv)}=${b.prod}`
             if (p === 0) {
               sum = pairSum
               log(`${lhs} ${a.prod}+${b.prod}=${pairSum} sum=${pairSum}`)
@@ -136,7 +143,8 @@ export function makeMultiply(chunk: number, karatsubaThreshold: number) {
             p += 2
           } else {
             const a = emitProduct(p)
-            const lhs = `A${a.i}_${padCell(a.av)}*B${a.j}_${padCell(a.bv)}=${a.prod}`
+            const consumed = p + 1
+            const lhs = `[${consumed}/${n}] A${a.i}_${padCell(a.av)}*B${a.j}_${padCell(a.bv)}=${a.prod}`
             if (p === 0) {
               sum = a.prod
               log(`${lhs} sum=${a.prod}`)

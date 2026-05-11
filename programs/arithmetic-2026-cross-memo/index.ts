@@ -50,13 +50,16 @@ await runProgram(defineProgram({
     return `${cellEncode(a)}\n${cellEncode(b)}`
   },
   display: (arg) => BigInt(arg).toLocaleString("en-US"),
-  // FIRE ticks (every REFRESH_INTERVAL k-iterations) re-print the A and B
-  // tapes inside a REFRESH/END_REFRESH block. SKIP ticks do not. On
-  // overflow we slice the continuation prefill from the most recent FIRE
-  // tick so the resumed assistant context ALWAYS includes the most recent
-  // operand re-print — without it, a cut landing 1..7 ticks past a FIRE
-  // leaves the model resuming without the operand tape it needs to compute
-  // the next pair line.
+  // Stack continuations: each chunk is appended (not replaced) with an
+  // anthropic cache marker, so on every continuation the model sees the
+  // ENTIRE prior trace — full operand REFRESHes, every prior k-row, the
+  // running carry chain, every prior pair-line cadence. At 128 digits
+  // this is what lets the model disambiguate mid-row from end-of-row,
+  // which trim mode couldn't manage even with FIRE-tick boundary slicing.
+  // Gateway auto-cache keeps the per-continuation cost effectively flat.
+  continuationMode: "stack",
+  // continueBoundary is unused in stack mode but kept here as
+  // documentation of the row-step structure.
   continueBoundary: /^tick=\d+ \[FIRE\]/m,
   trainingInputs: [
     ["47", "23"],

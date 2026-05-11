@@ -28,8 +28,11 @@ export interface ClaudeTestOptions {
   startToken: string | null;
   /** Optional regex marking step boundaries. When the response overflows,
    *  the assistant prefill for the continuation is sliced from the last
-   *  match in the full trace so the model resumes inside a complete step. */
+   *  match in the full trace so the model resumes inside a complete step.
+   *  Only used when continuationMode === "trim". */
   continueBoundary?: RegExp;
+  /** How to assemble messages across overflow continuations. See Program. */
+  continuationMode?: "trim" | "stack";
 }
 
 export interface GPTTestOptions {

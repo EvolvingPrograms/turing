@@ -55,11 +55,10 @@ await runProgram(defineProgram({
     return `A=${a}\n${cellEncode(a)}\nB=${b}\n${cellEncode(b)}`
   },
   display: (arg) => BigInt(arg).toLocaleString("en-US"),
-  // FIRE ticks re-print the A/B tapes via REFRESH; SKIP ticks don't.
-  // Slice the overflow prefill from the last FIRE so the model always has
-  // the most recent operand re-print in context on continuation. Slicing
-  // at any tick would cut off the REFRESH and leave the model without
-  // the operand tape for 1..REFRESH_INTERVAL-1 iterations at a time.
+  // Stack continuations — see cross-memo/index.ts for the rationale.
+  // Each chunk is appended with an ephemeral cache marker; the full prior
+  // trace stays in context on every call.
+  continuationMode: "stack",
   continueBoundary: /^tick=\d+ \[FIRE\]/m,
   trainingInputs: [
     // Sub-threshold: triggers pure cross-memo path (no Karatsuba).

@@ -183,6 +183,7 @@ export async function runProgram<Args extends readonly string[]>(
           messages,
           solution,
           continueBoundary: program.continueBoundary,
+          continuationMode: program.continuationMode,
           ...params,
         })
 

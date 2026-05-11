@@ -126,17 +126,25 @@ export function makeMultiply(chunk: number) {
         // against the operands on the same line. The previous running
         // sum is always visible (it's the last `=N` on the previous
         // line) so the model only attends 1 line back for it.
-        // Every line ends with `sum=<current_running_sum>` — uniform format
-        // so the model can find the running sum on ANY line by looking at
-        // the trailing `sum=...`. Removes the variance where "sum=N appears
-        // only on certain lines"; the previous format had the model
-        // misplacing the annotation by the time the trace got long.
+        // Each line starts with `[i/n]` — i = pairs consumed AFTER this
+        // line, n = total pairs in this k-row. Front-loading position info
+        // follows the left-to-right principle: the model writes its
+        // position label before computing anything, so the position
+        // constraint applies during the rest of the line. End-of-row is
+        // unambiguous (next line starts with `[n/n]`'s successor →
+        // `sum+c=…`). Mid-row is unambiguous too (next line starts with
+        // `[k/n]` for k < n → another pair). On continuation after an
+        // overflow, the prefill ends at the prior line's newline; the
+        // model's first emission on the new line is `[k/n]` which forces
+        // the correct branch.
+        const n = pairs.length
         while (p < pairs.length) {
           if (p + 1 < pairs.length) {
             const a = emitProduct(p)
             const b = emitProduct(p + 1)
             const pairSum = a.prod + b.prod
-            const lhs = `A${a.i}_${padCell(a.av)}*B${a.j}_${padCell(a.bv)}=${a.prod} A${b.i}_${padCell(b.av)}*B${b.j}_${padCell(b.bv)}=${b.prod}`
+            const consumed = p + 2
+            const lhs = `[${consumed}/${n}] A${a.i}_${padCell(a.av)}*B${a.j}_${padCell(a.bv)}=${a.prod} A${b.i}_${padCell(b.av)}*B${b.j}_${padCell(b.bv)}=${b.prod}`
             if (p === 0) {
               sum = pairSum
               log(`${lhs} ${a.prod}+${b.prod}=${pairSum} sum=${pairSum}`)
@@ -149,7 +157,8 @@ export function makeMultiply(chunk: number) {
             p += 2
           } else {
             const a = emitProduct(p)
-            const lhs = `A${a.i}_${padCell(a.av)}*B${a.j}_${padCell(a.bv)}=${a.prod}`
+            const consumed = p + 1
+            const lhs = `[${consumed}/${n}] A${a.i}_${padCell(a.av)}*B${a.j}_${padCell(a.bv)}=${a.prod}`
             if (p === 0) {
               sum = a.prod
               log(`${lhs} sum=${a.prod}`)
