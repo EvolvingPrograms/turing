@@ -62,9 +62,16 @@ await runProgram(defineProgram({
   postTest: (args, trace) => {
     const [aStr, bStr] = args
     const expected = BigInt(aStr) * BigInt(bStr)
-    const ret = trace.match(/^RETURN\s+([\s\S]+?)(?:\n\n|\n*$)/m)
-    if (!ret) return [["error", "no RETURN line found in trace"]]
-    const tokens = ret[1].split(/\s+/).filter(Boolean)
+    const lines = trace.split("\n")
+    const retIdx = lines.findIndex(l => l.startsWith("RETURN "))
+    if (retIdx < 0) return [["error", "no RETURN line in trace"]]
+    const tokens: string[] = []
+    tokens.push(...lines[retIdx].slice("RETURN ".length).trim().split(/\s+/).filter(Boolean))
+    for (let i = retIdx + 1; i < lines.length; i++) {
+      const l = lines[i].trim()
+      if (!l || !/^O\d+_\d+\b/.test(l)) break
+      tokens.push(...l.split(/\s+/).filter(Boolean))
+    }
     const BASE = 10n ** BigInt(CHUNK)
     let computed = 0n
     for (let i = tokens.length - 1; i >= 0; i--) {
@@ -77,6 +84,7 @@ await runProgram(defineProgram({
       ["B", BigInt(bStr).toLocaleString("en-US")],
       ["A × B", expected.toLocaleString("en-US")],
       ["computed", computed.toLocaleString("en-US")],
+      ["cells", String(tokens.length)],
       ["match", computed === expected ? "✓" : "✗ MISMATCH"],
     ]
   },

@@ -32,6 +32,18 @@ function printSection(title: string, rows: Array<[string, string]>) {
   }
 }
 
+// Block-style printer: label on its own line, value on subsequent
+// lines unwrapped — lets the terminal wrap long values naturally
+// without hanging-indent disrupting the digit groups (so a 256-digit
+// product reads as one continuous comma-grouped number).
+function printBlocks(title: string, rows: Array<[string, string]>) {
+  console.log(chalk.bold(chalk.cyan(title)))
+  for (const [key, value] of rows) {
+    console.log(chalk.bold(`  ${key}`))
+    console.log(`  ${value}`)
+  }
+}
+
 export interface RunOptions {
   /** Provider key (e.g. "anthropic") OR a full slug containing "/" (e.g. "anthropic/claude-opus-4.6"). */
   modelKey?: string
@@ -285,7 +297,7 @@ export async function runProgram<Args extends readonly string[]>(
         const rows = program.postTest(args as unknown as Args, text)
         if (rows && rows.length > 0) {
           console.log()
-          printSection(`Test ${start + i + 1} verification`, rows)
+          printBlocks(`Test ${start + i + 1} verification`, rows)
         }
       }
     }

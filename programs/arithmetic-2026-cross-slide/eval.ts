@@ -98,11 +98,28 @@ export function makeMultiply(chunk: number) {
       //   second half (k >= M-1): i0=k-M+1, t0=0
       const i0 = iMin
       const t0 = i0 + (M - 1 - k)
-      log(`RESUME k=${k} tick=${tick}/${REFRESH_INTERVAL} ${action} carry=${carry} prev=${prev} pairs=${pairs.length} i0=${i0} t0=${t0}`)
+      // iLast = i for the LAST pair in this row. Copy-friendly:
+      //   first half  (k < N-1): iLast = k       (copy k value from earlier on the line)
+      //   second half (k >= N-1): iLast = N-1    (constant 63 for 64-cell operands)
+      // Replaces `pairs=N` which required the model to write an
+      // incremented value each row — the model dropped the +1 at
+      // FIRE-boundary cognitive load. iLast is pure copy or constant.
+      const iLast = iMax
+      log(`RESUME k=${k} tick=${tick}/${REFRESH_INTERVAL} ${action} carry=${carry} prev=${prev} i0=${i0} iLast=${iLast} t0=${t0}`)
       if (isFire) {
         log("REFRESH")
         log(tapeFmt(A, "A"))
         log(tapeFmt(R, "R"))
+        // OUT: cells emitted so far, re-printed in the same TAPE_CHUNK=8
+        // shape as A/R. Carries the partial answer forward so the final
+        // RETURN can transcribe from the most recent OUT tape (recent,
+        // bounded attention reach) plus the few cells emitted since,
+        // instead of doing a 128-deep attention scan over scattered
+        // `O<k>_..` lines.
+        if (out.length > 0) {
+          log("OUT")
+          log(tapeFmt(out, "O"))
+        }
         log("END_REFRESH")
       }
 
@@ -115,21 +132,17 @@ export function makeMultiply(chunk: number) {
           const { i, t } = pairs[idx]
           return { i, t, av: A[i], rv: R[t], prod: A[i] * R[t] }
         }
-        // `[i/n]` front-loaded — load-bearing row-position anchor.
-        // `n` is copied from RESUME's `pairs=N` (no recomputation per
-        // line). On continuation the model reads the previous line's
-        // [i/n] and emits the next as [i+2/n] (or [i+1/n] single-pair).
-        // Removing this label let the model re-emit RESUME mid-row at
-        // large k; the explicit counter forces a non-RESUME shape on
-        // the next emission.
-        const n = pairs.length
+        // `[iCurrent/iLast]` per pair line — iCurrent is the i value
+        // of the LAST pair on this line; iLast is copied from RESUME.
+        // Both increment by 1 (or 2 for double-pair lines) per line,
+        // both monotonic. Row-end is `[iLast/iLast]`, unambiguous.
+        // Pure copy / counter ops, no diagonal recomputation.
         while (p < pairs.length) {
           if (p + 1 < pairs.length) {
             const a = emitProduct(p)
             const b = emitProduct(p + 1)
             const pairSum = a.prod + b.prod
-            const consumed = p + 2
-            const lhs = `[${consumed}/${n}] A${a.i}_${padCell(a.av)}*R${a.t}_${padCell(a.rv)}=${a.prod} A${b.i}_${padCell(b.av)}*R${b.t}_${padCell(b.rv)}=${b.prod}`
+            const lhs = `[${b.i}/${iLast}] A${a.i}_${padCell(a.av)}*R${a.t}_${padCell(a.rv)}=${a.prod} A${b.i}_${padCell(b.av)}*R${b.t}_${padCell(b.rv)}=${b.prod}`
             if (p === 0) {
               sum = pairSum
               log(`${lhs} ${a.prod}+${b.prod}=${pairSum}`)
@@ -142,8 +155,7 @@ export function makeMultiply(chunk: number) {
             p += 2
           } else {
             const a = emitProduct(p)
-            const consumed = p + 1
-            const lhs = `[${consumed}/${n}] A${a.i}_${padCell(a.av)}*R${a.t}_${padCell(a.rv)}=${a.prod}`
+            const lhs = `[${a.i}/${iLast}] A${a.i}_${padCell(a.av)}*R${a.t}_${padCell(a.rv)}=${a.prod}`
             if (p === 0) {
               sum = a.prod
               log(lhs)
