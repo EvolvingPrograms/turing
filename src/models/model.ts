@@ -1,27 +1,28 @@
 import chalk from "chalk"
 
 import { streamText } from "ai"
+import type { ModelMessage } from "ai"
 
 import { checkRollingSolution } from "./rolling"
 import { addUsage, printUsage, summarizeUsage, zeroUsage } from "./usage"
-import type { ClaudeTestOptions, TestResult } from "./types"
-import type { ModelMessage } from "ai"
+import type { ModelTestOptions, TestResult } from "./types"
 
 /**
  * Compute the assistant prefill for a continuation after an overflow.
  *
- * Without a boundary regex, returns `completed` (the new chunk minus its
- * last incomplete line) — same behavior as before this helper existed.
+ * Without a boundary regex, returns `completed` (the new chunk minus
+ * its last incomplete line). With a boundary regex, returns the suffix
+ * of `fullTrace` starting at the last qualifying boundary match.
  *
- * With a boundary regex, returns the suffix of `fullTrace` starting at
- * the last boundary match. The boundary regex must match at the start of
- * a line (use the `m` flag).
+ * `continueAnchor`: a boundary match only qualifies when this string
+ * appears in `fullTrace` AFTER the match — avoids slicing into an
+ * in-progress step.
  *
- * If `continueAnchor` is provided, a boundary match only qualifies when
- * `continueAnchor` appears somewhere in `fullTrace` AFTER the match.
- * This avoids slicing into a boundary whose step is still in progress
- * (e.g. a FIRE row whose REFRESH block hasn't finished emitting yet).
- * In that case we back up to the previous qualifying boundary.
+ * When there's a prelude (content before the first qualifying
+ * boundary), inject it at the head of the returned prefill with a
+ * `<HISTORY_TRUNCATED>` marker line, so the model sees the trace's
+ * actual first line (e.g. `CHUNK=2` + memoization table) without
+ * needing to re-send the omitted middle.
  */
 export function sliceContinuationPrefill(
   fullTrace: string,
@@ -47,25 +48,6 @@ export function sliceContinuationPrefill(
     lastMatch = idx
   }
   if (lastMatch < 0) return completed
-
-  // Prefill structure:
-  //   <trace prelude — everything BEFORE the first qualifying boundary>
-  //   <HISTORY_TRUNCATED>
-  //   <slice from lastMatch onward>
-  //
-  // The prelude (e.g. `CHUNK=2` for cross-slide) is whatever sits at
-  // the head of the actual trace before the first boundary line. It
-  // satisfies the model's "trace begins with X" in-context prior —
-  // without it the model on resume fell back to re-emitting the
-  // first token (`CHUNK`, previously `START`) mid-trace. The marker
-  // line `<HISTORY_TRUNCATED>` is uppercase-angle-tag, a shape that
-  // never appears in the training trace itself, so the model never
-  // has to learn whether to emit it — its sole role is in-context
-  // signal that omitted content existed between prelude and slice.
-  //
-  // If there's no prelude (firstMatch at index 0) or no truncation
-  // (firstMatch === lastMatch — only one qualifying boundary), no
-  // injection is needed; just return the slice.
   if (firstMatch === 0 || firstMatch === lastMatch) {
     return fullTrace.slice(lastMatch)
   }
@@ -74,7 +56,14 @@ export function sliceContinuationPrefill(
   return `${prelude}<HISTORY_TRUNCATED>\n${slice}`
 }
 
-export async function testWithClaude({
+/**
+ * Unified streaming test runner. Routes any gateway model slug
+ * (`anthropic/...`, `openai/...`, etc.) and applies provider-specific
+ * options based on the slug prefix. Streams output character-by-
+ * character with rolling solution check, handles overflow via trim or
+ * stack continuation, and accumulates usage across all chunks.
+ */
+export async function testWithModel({
   system,
   messages,
   max_tokens,
@@ -89,31 +78,20 @@ export async function testWithClaude({
   continuationMode = "trim",
   warmPrefill,
   stopSequences,
-}: ClaudeTestOptions): Promise<TestResult> {
+  reasoningEffort,
+}: ModelTestOptions): Promise<TestResult> {
   let responseCount = 0
   let runUsage = zeroUsage()
   const chunkUsages: ReturnType<typeof summarizeUsage>[] = []
 
-  // Two continuation modes:
-  //
-  //  "trim": every continuation sends exactly 3 messages —
-  //    { system (cached), [initial user, assistant: lastChunk, user: CONTINUE] }
-  //    lastChunk REPLACES each iteration (sliced from continueBoundary when set).
-  //    Cheap, but earlier chunks are not in context. Risky for long traces.
-  //
-  //  "stack": each completed chunk is APPENDED as its own assistant message
-  //    with an anthropic ephemeral cacheControl marker, followed by a CONTINUE
-  //    user turn. Messages grow:
-  //      [user, asst(c1,cache), user(CONT), asst(c2,cache), user(CONT), ...]
-  //    Gateway auto-caching keeps cost low because every prior chunk is
-  //    cache-resident. The full trace stays in context on every call.
-  //
-  // In both modes, the full trace is reassembled client-side for solution
-  // checking and the final return value.
+  // Provider detection from the slug. Provider-specific options below
+  // are gated by these flags; everything else is provider-agnostic.
+  const isAnthropic = typeof model === "string" && model.startsWith("anthropic/")
+  const isOpenAI = typeof model === "string" && model.startsWith("openai/")
+
   // Warm-start: pre-populate fullTrace and derive lastChunk via the
   // slicer so the first API call already sends an assistant prefill +
-  // CONTINUE, exactly as if a prior call had overflowed. Skips the
-  // model having to regenerate the warmPrefill rows from scratch.
+  // CONTINUE, exactly as if a prior call had overflowed.
   let fullTrace = warmPrefill ?? ""
   let lastChunk = warmPrefill
     ? sliceContinuationPrefill(fullTrace, fullTrace, continueBoundary, continueAnchor)
@@ -121,36 +99,41 @@ export async function testWithClaude({
   const stackedMessages: ModelMessage[] = [...messages]
 
   // System is byte-stable across every call (no per-call instruction
-  // appended). The training tape contains many full trace examples, so
-  // the model emits the correct first token (e.g. CHUNK=2) from its
-  // in-context prior — no explicit BEGIN RESPONSE WITH needed. This
-  // keeps every call's cache breakpoint identical: one write on call 1,
-  // cache reads on every continuation.
+  // appended) so gateway / provider caching keeps the training tape
+  // cache-resident. The anthropic cacheControl marker is a belt-and-
+  // suspenders hint that other providers ignore.
   const systemMessage = system
     ? {
       role: "system" as const,
       content: system,
-      providerOptions: {
-        anthropic: { cacheControl: { type: "ephemeral" as const } },
-      },
+      providerOptions: isAnthropic
+        ? { anthropic: { cacheControl: { type: "ephemeral" as const } } }
+        : undefined,
     }
     : undefined
+
+  // Provider-specific per-call options. Gateway auto-caching applies
+  // across all providers. For OpenAI reasoning models default to
+  // `reasoningEffort: "none"` so the model emits visible output
+  // immediately rather than burning the output budget on internal
+  // reasoning tokens.
+  const providerOptions = {
+    gateway: { caching: "auto" as const },
+    ...(isAnthropic && { anthropic: { thinking: { type: "disabled" as const } } }),
+    ...(isOpenAI && { openai: { reasoningEffort: reasoningEffort ?? "none" } }),
+  }
 
   while (true) {
     console.log()
     console.log(chalk.bold(chalk.yellow(`Response ${responseCount + 1}:`)))
     console.log()
 
-    // Opus 4.6+ rejects assistant-terminal prefill — every call must end
-    // with a user message. We assemble accordingly per mode.
+    // Most modern models reject assistant-terminal prefill — every
+    // call must end with a user message. We assemble accordingly.
     let callMessages: ModelMessage[]
     if (continuationMode === "stack") {
-      // `stackedMessages` already contains the full conversation history,
-      // including any prior asst(chunk N) + user(CONTINUE) pairs appended
-      // by the overflow branch below.
       callMessages = stackedMessages
     } else {
-      // Trim mode: 3 messages, last assistant chunk + CONTINUE.
       callMessages = lastChunk
         ? [
           ...messages,
@@ -160,8 +143,8 @@ export async function testWithClaude({
         : messages
     }
 
-    // `output` tracks the FULL trace client-side (for the rolling solution
-    // check, which compares the trace from START).
+    // `output` tracks the FULL trace client-side (for the rolling
+    // solution check, which compares the trace from START).
     let output = fullTrace
 
     const result = streamText({
@@ -171,13 +154,7 @@ export async function testWithClaude({
       maxOutputTokens: max_tokens || 4096,
       temperature,
       ...(stopSequences && stopSequences.length > 0 && { stopSequences }),
-      providerOptions: {
-        anthropic: { thinking: { type: "disabled" } },
-        // In stack mode the conversation grows; rely on gateway auto-cache
-        // to keep cost flat across continuations. Per-chunk cacheControl
-        // markers are attached in the overflow branch below.
-        ...(continuationMode === "stack" && { gateway: { caching: "auto" as const } }),
-      },
+      providerOptions,
     })
 
     let failedResult: TestResult | null = null
@@ -210,22 +187,17 @@ export async function testWithClaude({
     chunkUsages.push(chunkUsage)
 
     if (overflow) {
-      // Drop the last (incomplete) line; the model will recompute it.
-      // Everything before it is a clean suffix of the trace.
       const completed = text.split("\n").slice(0, -1).join("\n") + "\n"
       fullTrace += completed
 
       if (continuationMode === "stack") {
-        // Append this chunk as its own assistant turn with a cache marker,
-        // then a CONTINUE user turn. Subsequent calls see the entire
-        // accumulated history; gateway auto-cache keeps cost flat.
         stackedMessages.push(
           {
             role: "assistant",
             content: completed,
-            providerOptions: {
-              anthropic: { cacheControl: { type: "ephemeral" as const } },
-            },
+            providerOptions: isAnthropic
+              ? { anthropic: { cacheControl: { type: "ephemeral" as const } } }
+              : undefined,
           },
           { role: "user", content: "CONTINUE" }
         )

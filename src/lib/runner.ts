@@ -1,6 +1,6 @@
 import type { Program } from "./program"
 import { formatTrainingTape, encodeArgs, writeTrainingTape, writeTestSet } from "./io"
-import { testWithClaude, testWithGPT } from "../models"
+import { testWithModel } from "../models"
 import { addUsage, printUsage, zeroUsage, type UsageSummary } from "../models/usage"
 import { tqdm } from "../progress"
 import { backoff } from "../backoff"
@@ -163,7 +163,7 @@ export async function runProgram<Args extends readonly string[]>(
     await writeTestSet(programDir, program)
   }
 
-  const startTest = resolvedModel.startsWith("openai/") ? testWithGPT : testWithClaude
+  const startTest = testWithModel
 
   let correct = 0
   let totalUsage = zeroUsage()

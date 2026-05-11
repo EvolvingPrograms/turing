@@ -1,4 +1,4 @@
-import { testWithClaude, testWithGPT } from "./models"
+import { testWithModel } from "./models"
 import { addUsage, printUsage, zeroUsage, type UsageSummary } from "./models/usage"
 import type { Config, Test } from "./types"
 import { loadJSONFile, loadJSONLFile, loadModuleFile, loadTextFile } from "./utils"
@@ -56,8 +56,7 @@ async function runChallenge(test: Test, worker: number) {
   console.table(params)
   console.log(`Starting worker ${worker}...`)
 
-  const startTest = model.startsWith("openai/") ? testWithGPT : testWithClaude
-  const { pass, metadata } = await startTest({
+  const { pass, metadata } = await testWithModel({
     system: prompt,
     startToken,
     messages: [{ role: "user", content: input }],

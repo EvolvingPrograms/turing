@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test"
-import { sliceContinuationPrefill } from "./anthropic"
+import { sliceContinuationPrefill } from "./model"
 
 // Unit tests for the continuation-prefill slicer. The slicer decides what
 // assistant text the API sees as the prefill when a response overflows
