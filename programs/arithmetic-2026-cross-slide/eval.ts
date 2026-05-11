@@ -148,6 +148,20 @@ export function makeMultiply(chunk: number) {
         //
         // First pair in row has no `prev+prod=` suffix — running sum
         // starts at `prod`. Subsequent lines add to it.
+        // Hybrid decomp:
+        //   Leaves use `digit|product` notation — lookup from A_i's T row.
+        //   No mental 1d×2d arithmetic; model finds the row, reads the
+        //   entry for the digit, transcribes.
+        //   Combine uses explicit equation `P1*10+P2=prod` — the model
+        //   must commit to the operation and the result together, so a
+        //   slip on `prod` shows up as a broken equation rather than a
+        //   silently-wrong bare number. (Previously emitting just the
+        //   bare prod let the model emit a wrong value with no anchor.)
+        //
+        // Trivial cases (rv=0 → both digits 0) emit:
+        //   0|0 0|0 0*10+0=0
+        // Same shape as non-trivial, model can't compress by recognizing
+        // triviality.
         const useDecomp = chunk === 2
         const fmtDecomp = (av: number, rv: number, prod: number): string => {
           if (!useDecomp) return `=${prod}`
@@ -155,8 +169,7 @@ export function makeMultiply(chunk: number) {
           const rvLo = rv % 10
           const p1 = av * rvHi
           const p2 = av * rvLo
-          const p1s = p1 * 10
-          return `: ${rvHi}*${av}=${p1} ${rvLo}*${av}=${p2} ${p1}*10=${p1s} ${p1s}+${p2}=${prod}`
+          return `: ${rvHi}|${p1} ${rvLo}|${p2} ${p1}*10+${p2}=${prod}`
         }
         while (p < pairs.length) {
           const a = emitProduct(p)
@@ -176,10 +189,16 @@ export function makeMultiply(chunk: number) {
       }
 
       const total = sum + carry
-      log(`sum+c${carry}=${total}`)
       const cell = total % CELL_MAX
       const newCarry = Math.floor(total / CELL_MAX)
       out.push(cell)
+      // Chained equation: `row_sum + carry_in = total = carry_out*BASE + cell`.
+      // One line asserts BOTH the addition (how `total` was formed from
+      // the row's running sum + carry-in) AND the decomposition (how
+      // `total` splits into the next row's carry and this row's cell).
+      // The middle `total` is the join — if any computation is wrong
+      // the chain visibly breaks.
+      log(`${sum}+${carry}=${total}=${newCarry}*${CELL_MAX}+${cell}`)
       log(`O${k}_${padCell(cell)} c${newCarry}`)
       carry = newCarry
     }
@@ -208,6 +227,20 @@ export function makeMultiply(chunk: number) {
     }
 
     log(`CHUNK=${chunk}`)
+    // Model writes its own multiplication table T for the A cells.
+    // Each row: `A_i_av: 0|0 1|av 2|2av ... 9|9av` — ten 1d×2d products
+    // emitted once, then referenced by pair-line leaves throughout the
+    // trace. The model does the 640 mental products here, where the
+    // attention context is fresh, rather than scattered across thousands
+    // of pair lines. Subsequent decomp leaves `<digit>|<product>` are
+    // lookups against this self-written table.
+    log("T:")
+    for (let i = 0; i < tapeA.length; i++) {
+      const av = tapeA[i]
+      const entries: string[] = []
+      for (let d = 0; d <= 9; d++) entries.push(`${d}|${av * d}`)
+      log(`A${i}_${padCell(av)}: ${entries.join(" ")}`)
+    }
     const productTape = multiplySlide(tapeA, tapeB, log)
 
     log(`RETURN ${tapeFmt(productTape, "O")}`)

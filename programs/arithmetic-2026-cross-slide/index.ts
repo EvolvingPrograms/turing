@@ -53,6 +53,10 @@ await runProgram(defineProgram({
     const aCells = cellsLSB(a)
     const bCells = cellsLSB(b)
     const rCells = bCells.slice().reverse()
+    // User input contains only the operand tapes (A, B, R). The model
+    // generates its own multiplication table T at the start of the
+    // trace by computing each A_i's products with 0..9 — see eval.ts.
+    // We do NOT precompute T and hand it in (that would be cheating).
     return `A:\n${labelWrap(aCells)}\nB:\n${labelWrap(bCells)}\nR:\n${labelWrap(rCells)}`
   },
   display: (arg) => BigInt(arg).toLocaleString("en-US"),
@@ -105,6 +109,13 @@ await runProgram(defineProgram({
     ["7890", "12"],
     ["123", "456"],
     ["1234", "5678"],
+    // 6-digit pair with `00` cells. Operands have two consecutive 0
+    // digits, which produces cells of value 0 (after LSB-first chunk=2
+    // encoding). When such a cell participates in a pair the decomp
+    // is `0*av=0 0*av=0 0*10+0=0` — all-zero. Without a training
+    // example showing this format the model compresses ("the answer is
+    // trivially 0") and emits just `0`, breaking the line shape.
+    ["120034", "560078"],
     ["123456", "789012"],
     ["13579246", "8642"],
     // 48-digit × 48-digit (24 cells each at chunk=2). N+M-1 = 47, so
