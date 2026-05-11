@@ -61,6 +61,7 @@ export async function testWithClaude({
   continueAnchor,
   continuationMode = "trim",
   warmPrefill,
+  stopSequences,
 }: ClaudeTestOptions): Promise<TestResult> {
   let responseCount = 0
   let runUsage = zeroUsage()
@@ -142,6 +143,7 @@ export async function testWithClaude({
       ...(systemMessage && { system: systemMessage }),
       maxOutputTokens: max_tokens || 4096,
       temperature,
+      ...(stopSequences && stopSequences.length > 0 && { stopSequences }),
       providerOptions: {
         anthropic: { thinking: { type: "disabled" } },
         // In stack mode the conversation grows; rely on gateway auto-cache

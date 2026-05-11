@@ -8,6 +8,10 @@ export interface ProgramConfig {
    *  forbidding prose / "narration drift" via an explicit directive that
    *  appears in the system on every call. */
   systemPreamble?: string
+  /** Optional stop sequences passed to the model. When generated, the
+   *  model halts after emitting the sequence. Used to terminate the
+   *  trace at an explicit end-of-program marker (e.g. "DONE"). */
+  stopSequences?: string[]
 }
 
 /**

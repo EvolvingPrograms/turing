@@ -211,6 +211,12 @@ export function makeMultiply(chunk: number) {
     const productTape = multiplySlide(tapeA, tapeB, log)
 
     log(`RETURN ${tapeFmt(productTape, "O")}`)
+    // Explicit end-of-program marker. Paired with `stopSequences:
+    // ["DONE"]` on the API call so the model halts naturally at end.
+    // Without this marker the model emitted O<final>_.. then drifted
+    // into prose ("Now I need to compute…") instead of recognizing
+    // the program had ended.
+    log("DONE")
 
     const expected = tapeToBigInt(tapeA) * tapeToBigInt(tapeB)
     const actual = tapeToBigInt(productTape)

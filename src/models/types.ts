@@ -46,6 +46,9 @@ export interface ClaudeTestOptions {
    *  whether the model handles the heaviest middle rows without first
    *  having to grind through the easy ramp-up). */
   warmPrefill?: string;
+  /** Stop sequences passed to the API. Model halts after emitting any
+   *  of these. Used for explicit end-of-program markers. */
+  stopSequences?: string[];
 }
 
 export interface GPTTestOptions {

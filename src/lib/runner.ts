@@ -269,6 +269,7 @@ export async function runProgram<Args extends readonly string[]>(
           continueAnchor: program.continueAnchor,
           continuationMode: program.continuationMode,
           warmPrefill,
+          stopSequences: program.config.stopSequences,
           ...params,
         })
 

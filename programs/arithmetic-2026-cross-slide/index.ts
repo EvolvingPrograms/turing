@@ -93,9 +93,15 @@ await runProgram(defineProgram({
     ]
   },
   trainingInputs: [
+    // Many tiny examples so the model sees the program-end shape
+    // (final O cells → RETURN → DONE) many times.
+    ["12", "34"],
     ["47", "23"],
+    ["56", "78"],
     ["99", "99"],
+    ["100", "100"],
     ["478", "32"],
+    ["999", "111"],
     ["7890", "12"],
     ["123", "456"],
     ["1234", "5678"],
@@ -130,6 +136,7 @@ await runProgram(defineProgram({
     temperature: 0,
     maxTokens: 4096,
     defaultModel: "anthropic/claude-opus-4.6",
-    systemPreamble: "COMPUTER_MODE: NEVER WRITE HUMAN LANGUAGE",
+    systemPreamble: "COMPUTER_MODE: NEVER WRITE HUMAN LANGUAGE\nSTOP_TOKEN: DONE",
+    stopSequences: ["DONE"],
   },
 }))
