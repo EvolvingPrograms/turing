@@ -13,7 +13,7 @@ const TapeValue = (value: unknown): TapeValue => value as TapeValue
 
 function generateRule(ruleNumber: RuleNumber, log: (...args: string[]) => void): Rule {
   log(`RULE ${ruleNumber}`)
-  const ruleBinaryString = integerToBinaryTape(ruleNumber, log)
+  const ruleBinaryString = integerToBinaryTape(ruleNumber, log).padStart(8, "0")
 
   log(`BINARY ${ruleBinaryString.split("").map((v, i) => `${7-i}${format(v)}`).join(" ")}`)
   // LOG(`REVERSE BINARY POSITIONS ${ruleBinaryString.split("").map((v, i) => `${i}${format(v)}`).join(" ")}`)
