@@ -171,25 +171,18 @@ export function makeMultiply(chunk: number) {
           const p2 = av * rvLo
           return `: ${rvHi}|${p1} ${rvLo}|${p2} ${p1}*10+${p2}=${prod}`
         }
-        // Pair-line shape: each line starts with `A_i_..*R_..` (no
-        // leading `[i/iLast]` — the A_i index is the position) and
-        // ends with the `[/iLast]` sentinel. The sentinel does two
-        // jobs:
-        //  - terminator: after `... newSum [/iLast]\n` the next
-        //    line MUST be either `A_(i+1)_..` (continue) or
-        //    `sum+c=...` (row close). Standalone equations between
-        //    pair lines (a recap-drift failure we saw) have no
-        //    natural completion that fits this pattern.
-        //  - row-end anchor: the iLast value inside `[/iLast]` is
-        //    the bound the model compares A_i against to know it's
-        //    the last pair.
+        // Uniform pair-line shape: EVERY line ends with an explicit
+        // `prev+prod=newSum` running-sum update, including the first
+        // pair where `prev=0`. The asymmetric "first line ends at =prod"
+        // shape let the model emit a standalone `prod` line trying to
+        // anchor the running sum it couldn't see explicitly.
         while (p < pairs.length) {
           const a = emitProduct(p)
           const aOp = `A${a.i}_${padCell(a.av)}*R${a.t}_${padCell(a.rv)}`
           const aDecomp = `${aOp}${fmtDecomp(a.av, a.rv, a.prod)}`
           const prev = sum
           const newSum = prev + a.prod
-          log(`${aDecomp} ${prev}+${a.prod}=${newSum} [/${iLast}]`)
+          log(`[${a.i}/${iLast}] ${aDecomp} ${prev}+${a.prod}=${newSum}`)
           sum = newSum
           p += 1
         }
