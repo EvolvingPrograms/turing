@@ -97,15 +97,19 @@ export function makeMultiply(chunk: number) {
       //   first half (k < M-1): i0=0, t0=M-1-k
       //   second half (k >= M-1): i0=k-M+1, t0=0
       const i0 = iMin
-      const t0 = i0 + (M - 1 - k)
-      // iLast = i for the LAST pair in this row. Copy-friendly:
-      //   first half  (k < N-1): iLast = k       (copy k value from earlier on the line)
-      //   second half (k >= N-1): iLast = N-1    (constant 63 for 64-cell operands)
-      // Replaces `pairs=N` which required the model to write an
-      // incremented value each row — the model dropped the +1 at
-      // FIRE-boundary cognitive load. iLast is pure copy or constant.
       const iLast = iMax
-      log(`RESUME k=${k} tick=${tick}/${REFRESH_INTERVAL} ${action} carry=${carry} prev=${prev} i0=${i0} iLast=${iLast} t0=${t0}`)
+      const t0 = i0 + (M - 1 - k)
+      // Emit only the non-zero of (i0, t0) — the other is implicitly 0.
+      // First-half rows (and peak) have t0 ≥ 0 and i0 = 0 → emit `t0=X`.
+      // Second-half rows have t0 = 0 and i0 > 0 → emit `i0=X`.
+      // This makes the RESUME line shape itself signal which half we're
+      // in (the *field name* differs), and removes the chance for the
+      // model to emit a wrong constant for the field that's "supposed
+      // to be 0" — there's no such field to write.
+      const offsetField = t0 > 0 || (t0 === 0 && i0 === 0)
+        ? `t0=${t0}`   // first half + peak (t0 ≥ 0; i0 implicit 0)
+        : `i0=${i0}`   // second half (i0 > 0; t0 implicit 0)
+      log(`RESUME k=${k} tick=${tick}/${REFRESH_INTERVAL} ${action} carry=${carry} prev=${prev} iLast=${iLast} ${offsetField}`)
       if (isFire) {
         log("REFRESH")
         log(tapeFmt(A, "A"))
