@@ -13,6 +13,7 @@ on:
           - arithmetic-2026
           - arithmetic-2026-cross
           - arithmetic-2026-cross-memo
+          - arithmetic-2026-cross-slide
           - arithmetic-2026-karatsuba
           - arithmetic-2026-kara-memo
           - automata
