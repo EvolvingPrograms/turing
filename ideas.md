@@ -188,6 +188,93 @@ on cross-memo chunk=2. Lowest measured: chunk=2 at 16-dig = $0.0016/digit.
 The gap to the published literature in absolute operand size is roughly
 **13-26× linear, or ~10^58-10^250 in product magnitude**.
 
+## 128 × 128 milestone (2026-05-11, cross-slide)
+
+Two 128-digit operands successfully multiplied to a 256-digit product,
+single run, claude-opus-4.6, trim-mode continuation. Product magnitude
+~2.2 × 10²⁵⁵.
+
+This is the first time we hit 128 operand digits cleanly. Previous
+sessions topped out at 64 operand digits (128-digit product). 128
+operand digits → 256-digit product is ~10⁷⁵× larger than the prior
+best.
+
+### What it took — failure-mode cascade
+
+Each of the following was a debugged-and-fixed failure mode along the
+way. They're not redundant; each one is a load-bearing piece of the
+shape that holds at this scale.
+
+| # | Failure | Fix |
+|---|---|---|
+| 1 | `pairs +1` increment slip at FIRE boundary | replaced `pairs=N` with copy-friendly `iLast` in RESUME |
+| 2 | `b.i` vs `a.i` parity ambiguity at row-end | one pair per line, label is the pair's own `i` |
+| 3 | `k % 16` FIRE/SKIP slip at deep k | externalized `tick=N/16` (then 12) cycle counter |
+| 4 | `START` / `CHUNK=` re-emission on resume | trace prelude + `<HISTORY_TRUNCATED>` marker in trim slice |
+| 5 | OUT delta vs cumulative at deeper FIREs | range header `OUT O0..O<n-1>` + 48-digit training example |
+| 6 | 2d×2d leaf product slip (87×83=6921) | self-written memoization table `T` at trace start, `d|p` notation per leaf |
+| 7 | Bare-combine slip (1278 → 781) | bring back explicit `P1*10+P2=prod` equation |
+| 8 | Carry-split slip (8818 → c87 instead of c88) | chained equation `sum+c=total=carry*100+cell` |
+| 9 | Bare-`prod` recap line drift | uniform pair-line shape, first line writes `0+prod=prod` |
+| 10 | End-of-trace prose drift ("Now I need to…") | `DONE` token + `stopSequences: ["DONE"]` + STOP_TOKEN preamble |
+| 11 | `j = k - i` per-pair subtraction error | structural: cross-slide variant uses reversed-B (`R`) tape; both indices increment monotonically by +1 |
+| 12 | 64-cell tape transcription slip during REFRESH | hand R pre-reversed in user input — model only transcribes, never reverses |
+
+### Trim continuation is the load-bearing primitive
+
+Every successful run uses **trim continuation** — assistant prefill is
+sliced from the most recent FIRE with completed REFRESH, plus the
+trace prelude (`CHUNK=2` + T table) injected with a
+`<HISTORY_TRUNCATED>` marker. The full prior trace is never re-sent.
+
+This means context length is **not** the bottleneck. The bound is on
+the size of a single FIRE window (~12 row units of work). The trace
+can be arbitrarily long as long as each step's local context fits.
+
+This is the substrate analogue of a Turing machine's unbounded tape:
+each "instruction" sees only a finite local window, but the tape can
+extend forever.
+
+### Observations on which fixes are doing the most work
+
+- The cross-slide reformulation (reversed-B tape) is structural —
+  it makes pair-line indexing monotonic in both dimensions. This
+  alone removes an entire error class (`j = k - i` arithmetic).
+- The chained equations (`P1*10+P2=prod`, `sum+c=total=carry*100+cell`)
+  are anchoring: bare-number versions slip silently; equation versions
+  break visibly when wrong. Token cost ~2× per row-end line; reliability
+  gain seems worth it.
+- The memoization table `T` may be partly redundant: it lives in the
+  trace prelude and is re-sent on every continuation via the
+  `<HISTORY_TRUNCATED>` injection, but the model's mental 1d×2d
+  products are reliable enough that the table may not be load-bearing.
+  Worth testing whether removing T degrades reliability at 128 scale
+  before assuming it's necessary.
+- The `<HISTORY_TRUNCATED>` marker turned out to matter more than
+  expected: without it the model on resume would fall back to
+  re-emitting the trace prelude (CHUNK=, START before that), losing
+  position completely.
+
+### Cost
+
+128×128 run cost on the order of $1–$3 (estimate; needs measurement).
+Output ~50-60k tokens; input cached after first call. Roughly linear
+per output digit, consistent with prior smaller scales.
+
+### What's left to push toward 256×256
+
+- The cell-by-cell work scales as N×M = 4× from 128×128 to 256×256.
+  Trace length scales similarly. Per-row pair count peaks at N=128
+  pairs at the diagonal.
+- The `k % REFRESH_INTERVAL` and `iLast` shapes scale fine; the cycle
+  counter doesn't care about N.
+- The OUT tape at the last FIRE before RETURN would have ~240 cells
+  for 256-digit — bigger transcription but same shape as the 112-cell
+  case at 128×128 that worked.
+- Likely next ceilings: attention reach to the operand REFRESH at
+  very long traces; cost of re-emitting OUT at every FIRE (grows
+  linearly with the half it's in).
+
 ## Cache pricing observations
 
 - System prompt (training tape + algorithm examples) caches once,
