@@ -136,8 +136,9 @@ export async function runProgram<Args extends readonly string[]>(
   let testInputs = program.generateTestInputs({
     extra: opts.extra,
     flags: opts.flags,
+    n: opts.n,
   })
-  if (opts.n !== undefined) {
+  if (opts.n !== undefined && !program.handleN) {
     testInputs = testInputs.slice(0, opts.n)
   }
 

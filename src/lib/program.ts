@@ -35,7 +35,12 @@ export interface Program<Args extends readonly string[] = string[]> {
    *  reads `extra[0]` / `extra[1]` as the digit counts for A and B), plus
    *  any unknown `--key=value` flags via `flags` (e.g. `flags.chunk`).
    *  The lib caps the returned array to `-n N` if the user passes one. */
-  generateTestInputs: (opts?: { extra?: string[]; flags?: Record<string, string> }) => Args[]
+  generateTestInputs: (opts?: { extra?: string[]; flags?: Record<string, string>; n?: number }) => Args[]
+  /** When true, the program's generateTestInputs interprets `-n` itself
+   *  (e.g. as trials-per-rule) and the runner does NOT post-slice the
+   *  returned list. When false/undefined (default), the runner caps the
+   *  returned list to the first n inputs. */
+  handleN?: boolean
   /** Optional: format args as the [USER] block content. Default: args.join("\n"). */
   encode?: (...args: Args) => string
   /** Optional: human-friendly representation of one arg for the run banner table

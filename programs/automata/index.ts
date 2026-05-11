@@ -2,14 +2,13 @@ import { defineProgram, runProgram } from "../../src/lib"
 import { shuffle } from "../utils"
 import automaton, { formatTape, type Tape, type TapeValue } from "./eval"
 
-// CLI flags (read inside generateTestInputs via opts.flags):
+// CLI flags:
 //   --rule=N[,M,...] : restrict tests to one or more specific rules.
-//                      Each named rule gets 20 random-tape instances so
-//                      `--n=K` can slice down to K runs.
-//   --steps=N        : override generations per test (default 9).
-//                      Training still uses its own varied step counts
-//                      (12, 9, 3, 2) so the model has seen multiple
-//                      step counts regardless of test-side --steps.
+//                      Default: all 256 rules.
+//   --steps=N        : generations per test (default 9). Training still
+//                      uses its own varied step counts (12, 9, 3, 2).
+//   --n=K            : trials per rule (default 1). Each trial gets a
+//                      fresh random tape. Total tests = rules × n.
 
 // Adapter: the runner calls evaluate with string args; testAutomata already
 // handles string initialState (via deformatTape) and string ruleNumber/generations.
@@ -49,7 +48,8 @@ const trainingInputs: Array<[string, string, string]> = [
   [formatTape(makeTape(4, 0, 2)), "233", "3"],
 ]
 
-// Replicate create-test.ts: curated rules prepended, rest shuffled with random 10-cell tapes.
+// Curated rules emitted first in the full-sweep ordering (so a small
+// --n still hits the canonical Wolfram class examples early).
 const selected = [1, 0, 30, 54, 60, 62, 90, 94, 102, 110, 122, 126, 150, 158, 182, 188, 190, 220, 222, 250, 254]
 
 function randomTape10(): Tape {
@@ -60,44 +60,34 @@ function randomTape10(): Tape {
 }
 
 function generateTestInputs(
-  opts?: { flags?: Record<string, string> }
+  opts?: { flags?: Record<string, string>; n?: number }
 ): Array<[string, string, string]> {
   const steps = opts?.flags?.steps ?? "9"
   const ruleFlag = opts?.flags?.rule
+  const trials = opts?.n ?? 1
 
+  let rules: number[]
   if (ruleFlag) {
-    const rules = ruleFlag.split(",").map(s => parseInt(s.trim(), 10))
+    rules = ruleFlag.split(",").map(s => parseInt(s.trim(), 10))
     for (const r of rules) {
       if (!Number.isInteger(r) || r < 0 || r > 255) {
         throw new Error(`--rule values must be integers 0..255, got: ${ruleFlag}`)
       }
     }
-    const out: Array<[string, string, string]> = []
-    for (const r of rules) {
-      for (let k = 0; k < 20; k++) {
-        out.push([formatTape(randomTape10()), String(r), steps])
-      }
-    }
-    return out
+  } else {
+    // Full sweep: curated rules first (in their listed order), then the
+    // remaining rules shuffled.
+    const rest = shuffle(Array.from({ length: 256 }, (_, i) => i).filter(i => !selected.includes(i)))
+    rules = [...selected, ...rest]
   }
 
-  const examples: Array<[string, string, string]> = []
-
-  // Non-selected rules: random tape
-  for (let i = 0; i < 256; i++) {
-    if (!selected.includes(i)) {
-      examples.push([formatTape(randomTape10()), String(i), steps])
+  const out: Array<[string, string, string]> = []
+  for (const r of rules) {
+    for (let k = 0; k < trials; k++) {
+      out.push([formatTape(randomTape10()), String(r), steps])
     }
   }
-
-  const shuffled = shuffle(examples)
-
-  // Selected rules prepended (in reverse order, matching original behavior)
-  for (const rule of selected.reverse()) {
-    shuffled.unshift([formatTape(randomTape10()), String(rule), steps])
-  }
-
-  return shuffled
+  return out
 }
 
 await runProgram(defineProgram({
@@ -106,6 +96,7 @@ await runProgram(defineProgram({
   encode: (tape, rule, steps) => `${tape}\n${rule}\n${steps}`,
   trainingInputs,
   generateTestInputs,
+  handleN: true,
   config: {
     temperature: 0,
     maxTokens: 4096,

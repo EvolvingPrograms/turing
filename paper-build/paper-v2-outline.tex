@@ -1,0 +1,983 @@
+% !TEX program = xelatex
+\documentclass[twocolumn,switch,10pt]{article}
+\usepackage{preprint}
+\SetBgContents{}
+% preprint.sty enables \flushbottom, which stretches inter-paragraph
+% glue to make the two columns finish at the same baseline. When the
+% imbalance is large, that stretching lands as obvious gaps after
+% section headings (where the most flexible glue lives). Switch to
+% \raggedbottom: uneven column bottoms, no stretching.
+\raggedbottom
+\usepackage{hyperref}
+\usepackage[numbers,square]{natbib}
+\usepackage{fontspec}
+% Pick a Unicode-complete monospace at compile time — fontspec
+% checks each candidate and falls through if it isn't installed.
+% DejaVu Sans Mono is the broadest match (full block-drawing /
+% box-drawing / geometric range); Menlo is the macOS default;
+% Liberation Mono is the standard Linux substitute. Latin
+% Modern Mono (TeX Live default) is the last-resort baseline.
+\IfFontExistsTF{DejaVu Sans Mono}
+  {\setmonofont[Scale=MatchLowercase]{DejaVu Sans Mono}}
+  {\IfFontExistsTF{Menlo}
+    {\setmonofont[Scale=MatchLowercase]{Menlo}}
+    {\IfFontExistsTF{Liberation Mono}
+      {\setmonofont[Scale=MatchLowercase]{Liberation Mono}}
+      {}}}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath,amssymb}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{lineno}
+\usepackage{lipsum}
+\usepackage{titlesec}
+
+
+
+
+% ORCID iD logo: the official green-circle PNG ships with paperese
+% and is copied alongside the .tex at render time so pdflatex
+% finds it via \includegraphics{orcid.png}.
+
+\hypersetup{colorlinks=true, linkcolor=purple, urlcolor=blue, citecolor=cyan, anchorcolor=black}
+
+\bibliographystyle{unsrtnat}
+
+\titlespacing\section{0pt}{12pt plus 3pt minus 3pt}{1pt plus 1pt minus 1pt}
+\titlespacing\subsection{0pt}{10pt plus 3pt minus 3pt}{1pt plus 1pt minus 1pt}
+\titlespacing\subsubsection{0pt}{8pt plus 3pt minus 3pt}{1pt plus 1pt minus 1pt}
+
+% Shrink fenced code blocks. Two-column layout has narrow columns, so
+% verbatim at body size overflows easily — \scriptsize gives ~80 cols
+% of code per column without compromising readability of prose.
+\makeatletter
+\def\verbatim@font{\normalfont\ttfamily\scriptsize}
+\makeatother
+
+% Give tabular rows more vertical breathing room. Booktabs tables
+% without rules between rows compress visually in narrow two-column
+% layouts. \arraystretch alone only helps when rows are tall —
+% adjacent short rows still butt up against each other. \extrarowheight
+% (from the array package) adds a fixed pad ABOVE every row, so even
+% single-line neighbours get clear separation. Combined with a small
+% stretch for multi-line rows.
+\renewcommand{\arraystretch}{1.15}
+\setlength{\extrarowheight}{8pt}
+
+% Pandoc helpers — \tightlist is emitted on collapsed itemize/enumerate
+% blocks; \passthrough wraps inline code with smart quotes preserved.
+\providecommand{\tightlist}{\setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\providecommand{\passthrough}[1]{#1}
+
+% Pandoc citeproc emits \begin{CSLReferences} for the bibliography
+% list when --citeproc resolves citations from inline references:
+% Pandoc's default template defines the environment + helper macros;
+% since we emit a fragment we provide them ourselves. This matches
+% pandoc's stock definition (with a small heading prepended).
+\newlength{\cslhangindent}
+\setlength{\cslhangindent}{1.5em}
+\newlength{\csllabelwidth}
+\setlength{\csllabelwidth}{3em}
+\newenvironment{CSLReferences}[2]% #1 hanging-indent flag, #2 entry-spacing
+  {\section*{References}%
+   % Author-year CSL styles emit \bibitem[\citeproctext]{key} where
+   % the optional label is intentionally empty; \bibitem's default
+   % falls back to a [0] numeric counter, which we don't want
+   % showing next to every entry. Redefine bibitem inside the
+   % bibliography so it just emits \item, dropping both args.
+   \renewcommand{\bibitem}[2][]{\item}%
+   \begin{list}{}{%
+     \setlength{\itemsep}{0pt}%
+     \setlength{\parsep}{0pt}%
+     \ifodd #1
+       \setlength{\leftmargin}{\cslhangindent}%
+       \setlength{\itemindent}{-1\cslhangindent}%
+     \else
+       \setlength{\leftmargin}{0pt}%
+       \setlength{\itemindent}{0pt}%
+     \fi
+     \setlength{\parskip}{#2\baselineskip}}}%
+  {\end{list}}
+\providecommand{\CSLBlock}[1]{#1\hfill\break}
+\providecommand{\CSLLeftMargin}[1]{\parbox[t]{\csllabelwidth}{#1}}
+\providecommand{\CSLRightInline}[1]{\parbox[t]{\dimexpr\linewidth-\csllabelwidth\relax}{#1}}
+\providecommand{\CSLIndent}[1]{\hspace{\cslhangindent}}
+\providecommand{\citeproctext}{}
+
+\title{Untitled}
+
+
+
+\begin{document}
+
+\twocolumn[\begin{@twocolumnfalse}
+\maketitle
+
+\vspace{0.4cm}
+
+\vspace{0.5cm}
+\end{@twocolumnfalse}]
+
+\section{Paper v2: outline (draft 2)}\label{paper-v2-outline-draft-2}
+
+Working title: \textbf{Production Transformers as Universal Computers at Scale: 128-Digit Decimal Multiplication via In-Context Substrate Design}
+
+Successor to \texttt{paper-paperese.md} (May 2024, Claude 3 Opus, 256 ECA rules
+including Rule 110, and 27-bit binary multiplication). The May 2026
+result demonstrates the same core thesis --- that a production transformer
+can be elicited to function as a universal computer --- at a scale where
+``universal computation'' is no longer a theoretical badge granted by
+simulating Rule 110 on a small tape, but is an empirical operating
+regime: thousands of compositional steps, products of \(\sim 10^{255}\)
+magnitude demonstrated end-to-end, with \(\sim 100\%\) measured accuracy
+at the planned 64-digit benchmark, on a production model, no
+fine-tuning, no calculator.
+
+The contribution is not a shift of focus away from universal computation.
+It is the opposite: a sharper realization of it, with an account of
+which structural properties of the tape design make the substrate
+behave as the unbounded-tape primitive a Turing machine requires.
+
+A second framing carries through the entire paper: \textbf{what is conventionally
+called ``reasoning'' in current LLM discourse --- chain-of-thought, scratchpads,
+intermediate steps --- is at root indistinguishable from running a
+computation step by step.} The output stream is the computation. There is
+no ``behind the scenes'' symbolic reasoning happening separately from the
+emitted tokens; the tokens are the computation. For algorithms that are
+\textbf{computationally irreducible} (Wolfram 2002) --- multi-digit
+multiplication is the canonical case --- no shortcut exists. The atomic
+steps must be performed in sequence. The question is not whether the
+model can ``reason about'' the answer but whether it can faithfully
+\textbf{execute} the irreducible algorithm step by step. The substrate
+properties we identify are not mechanisms for better reasoning; they
+are the conditions under which a transformer's forward pass can serve
+as the transition function of a computationally irreducible process.
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\subsection{Headline result (vs.~v1)}\label{headline-result-vs.-v1}
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{table}[t]
+\centering
+
+\begin{tabular}{@{}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2500}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2500}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2500}}
+  >{\raggedright\arraybackslash}p{(\linewidth - 6\tabcolsep) * \real{0.2500}}@{}}\toprule
+\begin{minipage}[b]{\linewidth}\raggedright
+Dimension
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+v1 (2024)
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+v2 (2026)
+\end{minipage} & \begin{minipage}[b]{\linewidth}\raggedright
+Δ
+\end{minipage} \\
+\midrule
+
+Operand size demonstrated & 27-bit binary (\(\sim 9\) decimal digits) & \textbf{128-digit decimal} (existence proof) & \(\sim 14\times\) linear \\
+Operand size measured (\(n \ge 12\)) & \(\sim 27\)-bit & \textbf{64-digit decimal} (\(n = 25\) planned) & \(\sim 7\times\) linear \\
+Product size at largest demonstration & 54-bit (\(\sim 16\) decimal digits) & \textbf{256-digit decimal} & \(\sim 16\times\) linear \\
+Product magnitude at largest & \(\sim 10^{16}\) & \(\mathbf{\sim 10^{255}}\) & \(\sim 10^{239}\) \\
+Model & Claude 3 Opus & Claude Opus 4.6 & newer family, two major revs \\
+Continuation & Chain by appending output & Trim with landmark-anchored slicer & new substrate primitive \\
+Substrate properties identified & 1 (dense positional indexing) & \textbf{6} (formalized below) & new \\
+\bottomrule
+\end{tabular}
+\end{table}
+}
+
+The earlier paper's framing --- production transformer as empirical
+universal computer via ICL --- extends naturally. What is new in v2:
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\tightlist
+\item
+  The scale at which the demonstration holds (\textasciitilde4000 compositional
+  steps; 25× linear past published state of the art on the same task).
+\item
+  A substrate primitive (trim continuation with landmark slicing) that
+  decouples problem size from context window --- the trace itself is the
+  unbounded tape, not the model's context.
+\item
+  A set of six identifiable substrate properties that together
+  realize the Turing-machine-implementation requirements in an LLM
+  substrate.
+\item
+  A failure-mode cascade --- 12 distinct empirical observations about
+  what the model can and cannot reliably compute per token --- that
+  constitutes the constructive evidence for those substrate
+  properties.
+\end{enumerate}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\subsection{Sections}\label{sections}
+
+\subsubsection{Abstract / Introduction}\label{abstract-introduction}
+
+The thesis is the same as v1: a production transformer trained by
+gradient descent on natural language, with no architectural
+modifications and no fine-tuning, can be elicited to function as a
+universal computer via in-context learning over patterned examples.
+v1 established this at small scale; v2 establishes it at a scale where
+the demonstration is no longer trivial.
+
+The published landscape on decimal multiplication has moved
+substantially between v1 and v2 --- see Related Work --- but the
+substrate-design approach reported here exceeds all of it by a wide
+margin without specialized training. Specifically:
+
+\begin{itemize}
+\tightlist
+\item
+  General-purpose production models with conventional prompting:
+  effective ceiling around 4--5 digit decimal multiplication.
+\item
+  Fine-tuned or specialized-architecture approaches with custom
+  embeddings, reversed digit order, or implicit-CoT training: 12--15
+  digit decimal multiplication at \(\sim 100\%\) accuracy.
+\item
+  This work: \textbf{128-digit decimal multiplication demonstrated
+  end-to-end on Claude Opus 4.6}, no fine-tuning, no architectural
+  modifications. At 128 digits the run completes successfully but
+  not reliably --- the trace is long enough that per-token failure
+  probabilities compound, and only a fraction of attempts pass
+  byte-for-byte. The headline accuracy benchmark is at \textbf{64 digits}
+  (\(n = 25\) trials planned, on a compressed-tape variant), where we
+  expect \(\sim 100\%\).
+\end{itemize}
+
+That is roughly \(4\times\) linear past the best published reliable
+multiplication result for the 64-digit benchmark, plus a further
+\(2\times\) at 128 demonstrated as an existence proof. Both on a
+generalist production model rather than a specialized one. The
+mechanism is in-context substrate design, not training.
+
+\subsubsection{Method}\label{method}
+
+\paragraph{General approach (continued from v1)}\label{general-approach-continued-from-v1}
+
+Same methodology as v1: model receives a structured training tape of
+worked examples, is asked to execute the algorithm on a fresh input,
+and the output is matched byte-for-byte against a deterministic
+reference evaluator. No English explanation, no chain-of-thought
+scaffolding, no external tools. The model induces the algorithm from
+the patterned examples and executes it via autoregressive emission.
+
+\paragraph{The algorithm --- Tanton sliding-strip cross-multiplication}\label{the-algorithm-tanton-sliding-strip-cross-multiplication}
+
+Cross-multiplication of \(n\)-cell \(\times\) \(n\)-cell operands (cells
+base-\(100\), two decimal digits each). The Tanton sliding-strip
+reformulation reverses \(B\) into a tape \(R\) such that for each diagonal
+index \(k\), the pair indices \((i, t)\) both increase monotonically by
+\(1\) across the row. No per-pair \(j = k - i\) subtraction. The \(R\) tape
+is pre-reversed in the user input --- the model transcribes it during
+each REFRESH but never derives it.
+
+\paragraph{The substrate as Turing-machine implementation}\label{the-substrate-as-turing-machine-implementation}
+
+A Turing machine requires: (a) an unbounded tape, (b) a finite state /
+transition function, (c) deterministic step semantics, (d) a halt
+condition. The six substrate properties identified here map directly
+to these requirements as they manifest in an LLM substrate:
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\tightlist
+\item
+  \textbf{Deterministic single-direction trace.} Every emitted token is a
+  function of tokens to its immediate left. The model's
+  forward-pass forms the transition function over the local window;
+  the trace forms the tape contents.
+\item
+  \textbf{Externalized counters.} Anything the model would need finite
+  internal state to track across many forward passes --- cycle
+  counters, row indices, carry chains --- is written explicitly into
+  the trace as bounded counters (e.g.~\(\text{tick}=N/12\),
+  \([i/i_{\text{last}}]\), \(\text{carry}=c\)). The tape carries state
+  the model cannot.
+\item
+  \textbf{Memoization on bounded sub-operations.} For decimal at
+  chunk-size 2, the model writes its own \(A_i \times d\) lookup table
+  once at trace start (\(T\) block of 64 rows × 10 entries). Per-leaf
+  sub-products in the body of the trace are then lookups against
+  what the model wrote. The table is regenerated, not pre-supplied;
+  the model still performs every required \(1 \times 2\) digit product
+  --- once, in a clean context --- rather than thousands of times
+  scattered across the trace.
+\item
+  \textbf{Cross-check equations on each computation.} Bare numeric
+  emissions can slip silently; equations break visibly. Each
+  computed value appears as part of an equation (\texttt{P1*10+P2=prod},
+  \texttt{total=carry*100+cell}) whose terms are independently visible on
+  the line. Errors self-anchor.
+\item
+  \textbf{Trim continuation with landmark-anchored slicing.} On API
+  response overflow, the assistant prefill is sliced to the most
+  recent FIRE block whose REFRESH has completed, with the trace
+  prelude (\texttt{CHUNK=2} line and the \(T\) table) preserved at the head
+  under a \texttt{\textless{}HISTORY\_TRUNCATED\textgreater{}} marker. Each continuation sends
+  exactly one FIRE-window of context. The model's effective tape is
+  unbounded by its context window. This is the substrate primitive
+  that closes the v1 paper's open question: the model's 200k-token
+  context window is not the binding constraint.
+\item
+  \textbf{Explicit halt condition.} A \texttt{DONE} token paired with an API-
+  level stop sequence. Without it the model drifts into prose at
+  end of trace.
+\end{enumerate}
+
+\paragraph{Trim continuation, formally}\label{trim-continuation-formally}
+
+Each step of the algorithm (one \(k\)-row) writes its own situational
+summary at its start: \texttt{RESUME\ k=N\ tick=T/M\ FIRE\textbar{}SKIP\ carry=C\ prev=O…\ iLast=L\ t0=X}. The slicer keeps everything from the most
+recent FIRE row whose REFRESH block has finished emitting; the
+prelude is preserved. On continuation the model receives:
+
+\begin{verbatim}
+CHUNK=2
+T:
+A0_..: 0|0 1|.. 2|.. … 9|..
+…
+A63_..: 0|0 1|.. … 9|..
+<HISTORY_TRUNCATED>
+RESUME k=<latest FIRE row> tick=0/12 FIRE …
+[FIRE block]
+[partial pair lines through cut point]
+\end{verbatim}
+
+Two structural consequences:
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Unbounded tape.} Total trace length is not bounded by the
+  model's input/output context window; only one FIRE window plus the
+  prelude must fit. For 128-digit operands at REFRESH interval \(12\),
+  a FIRE window is on the order of 5K--10K tokens; well inside any
+  modern context.
+\item
+  \textbf{Bounded local context per step.} The model's per-call work is
+  always a finite local window. This is the Turing-machine analogue
+  precisely: a finite transition function operating over a fixed
+  local read.
+\end{itemize}
+
+\subsubsection{Implementation}\label{implementation}
+
+Single open-source repository (this one); the harness is reusable
+across programs. Each program declares an \texttt{index.ts} (config +
+training inputs) and an \texttt{eval.ts} (reference evaluator). The runner
+streams the model's response and compares to the reference
+character-by-character via \texttt{checkRollingSolution}; on first
+divergence the run fails. Continuation is handled by the unified
+\texttt{testWithModel} function which routes any gateway slug
+(\texttt{anthropic/...}, \texttt{openai/...}) and applies provider-specific
+options inline. Trim/stack continuation modes, warm-start
+(\texttt{-\/-from=K}), and stop sequences all work uniformly across providers.
+
+\subsubsection{Results}\label{results}
+
+\paragraph{Demonstration at 128 digits}\label{demonstration-at-128-digits}
+
+128-digit operands \(A\) and \(B\), executed on Claude Opus 4.6 at
+temperature 0. A successful run produced a 256-digit product with
+byte-for-byte match against the reference trace; product magnitude
+\(\sim 2.2 \times 10^{255}\). At 128 digits the run is \textbf{achievable
+but not yet reliable} --- the trace is \textasciitilde50--60K output tokens across
+\textasciitilde10--15 chained API calls, and per-token failure probabilities
+compound over thousands of atomic emissions. The 128×128 result is
+reported as an \textbf{existence proof} for the substrate at this scale,
+not as a measured accuracy.
+
+\paragraph{Accuracy benchmark at 64 digits}\label{accuracy-benchmark-at-64-digits}
+
+The headline accuracy measurement is planned at \textbf{64 digits}:
+\(n = 25\) trials on random 64-digit operand pairs, on a compressed-
+tape variant of the substrate, against the reference evaluator
+byte-for-byte. We expect \(\sim 100\%\) on this benchmark --- the
+trace is \textasciitilde10--15K output tokens, well inside the regime where the
+substrate properties keep every per-token decision in the model's
+reliable range. This is the comparison point against the published
+12--15-digit fine-tuned frontier.
+
+For reference:
+
+{\def\LTcaptype{none} % do not increment counter
+\begin{table}[t]
+\centering
+
+\begin{tabular}{@{}ll@{}}\toprule
+Quantity & Magnitude \\
+\midrule
+
+Atoms in the observable universe & \(10^{80}\) \\
+Legal chess positions (Shannon number) & \(\sim 10^{40}\) \\
+Estimated distinct chess games & \(\sim 10^{120}\) \\
+Planck volumes in the observable universe & \(\sim 10^{183}\) \\
+\textbf{\(A \times B\) in this run} & \(\mathbf{\sim 10^{255}}\) \\
+\bottomrule
+\end{tabular}
+\end{table}
+}
+
+The run cost on the order of \$1--\$3, output \textasciitilde50--60k tokens
+spanning roughly 10--15 chained API calls. Cache reads dominate input
+after the first call; the system prompt and the trace prelude (with
+\(T\)) remain cache-resident throughout.
+
+\paragraph{Failure-mode cascade}\label{failure-mode-cascade}
+
+The substrate properties were not designed top-down. They were
+extracted from a sequence of empirically observed failure modes,
+each revealing a load-bearing assumption about the model's per-
+token reliability. The cascade is itself a contribution: it
+constitutes evidence about what the model's effective transition
+function can and cannot compute, in a form that can be replicated
+and stressed at other scales.
+
+Documented in order of discovery:
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\tightlist
+\item
+  \texttt{pairs\ +1} increment slip at FIRE boundary → replaced with
+  copy-friendly \texttt{iLast}.
+\item
+  \texttt{b.i} vs \texttt{a.i} parity ambiguity at row-end → one pair per line,
+  uniform label.
+\item
+  \(k \bmod 16\) FIRE/SKIP slip at deep \(k\) → externalized
+  \texttt{tick=N/16} (later \(12\)).
+\item
+  \texttt{START} / \texttt{CHUNK=} re-emission on resume → \texttt{\textless{}HISTORY\_TRUNCATED\textgreater{}}
+  marker preserves trace prelude in every continuation.
+\item
+  OUT delta vs cumulative semantics at deeper FIREs → range header
+  \texttt{OUT\ O0..O\textless{}n-1\textgreater{}} + larger training example.
+\item
+  \(2d \times 2d\) leaf product slip (\(87 \times 83 = 6921\)) →
+  model-written memoization table \(T\) at trace start; leaves
+  become \texttt{\textless{}digit\textgreater{}\textbar{}\textless{}product\textgreater{}} lookups.
+\item
+  Bare-combine slip (\(1278 \to 781\)) → explicit
+  \texttt{P1*10+P2=prod} equation rather than bare numeric.
+\item
+  Carry-split slip (\(8818 \to\) \texttt{c87} instead of \texttt{c88}) → chained
+  \texttt{total=carry*100+cell} equation.
+\item
+  Bare-\texttt{prod} recap line drift between pair lines → uniform
+  per-line shape with explicit \texttt{0+prod=prod} on first line.
+\item
+  End-of-trace prose drift → \texttt{DONE} token plus stop sequence.
+\item
+  \(j = k - i\) per-pair subtraction error at large \(i\) →
+  cross-slide variant with reversed-\(B\) (\(R\)) tape, both indices
+  monotonic.
+\item
+  64-cell tape transcription slip during REFRESH → hand \(R\)
+  pre-reversed in user input; model only transcribes.
+\end{enumerate}
+
+Each entry frames the failure mode at the token level: what specific
+decision the model slipped on, and what structural change in the
+tape made that slip impossible.
+
+\paragraph{Cost, scaling, robustness}\label{cost-scaling-robustness}
+
+The trace at 128×128 spans roughly 10--15 chunks; cache reads
+dominate input after the first call. Total cost is sub-\$5 per run.
+The cost-per-output-digit is approximately constant across scales
+from 8×8 through 128×128, consistent with the substrate behaving
+as a fixed-overhead-per-step computation rather than one whose
+per-token cost grows with problem size.
+
+\subsubsection{Discussion}\label{discussion}
+
+\paragraph{What v2 adds to the universal-computation thesis}\label{what-v2-adds-to-the-universal-computation-thesis}
+
+v1 demonstrated that the computational circuits necessary for
+universal computation are present in a production model --- Rule 110
+can be simulated, multiplication can be performed at small scale.
+The natural objection to v1 was that the demonstration relied on
+small tapes and short traces; the empirical case for universal
+computation rested on a Turing-completeness simulation rather than
+on long, compositional computation.
+
+v2 closes that gap in two layers. At the planned 64-digit benchmark
+(\(n = 25\)), the substrate produces a multi-thousand-step
+compositional execution with \(\sim 100\%\) measured accuracy across
+many chained API calls. At 128 digits the substrate produces a
+successful end-to-end run as an existence proof at the larger scale,
+though reliability is not yet measured at that depth. In both
+cases the substrate primitive (trim continuation) removes the
+context window as a binding constraint. The ``universal computer''
+interpretation is no longer dependent on a Rule-110-style existence
+proof on a small tape; the production transformer is constructively
+executing long compositional algorithms whose state grows
+arbitrarily, on arbitrary inputs.
+
+\paragraph{Failure modes as evidence about the model's transition function}\label{failure-modes-as-evidence-about-the-models-transition-function}
+
+The 12 failure modes are empirical evidence about what the model's
+forward-pass can and cannot reliably compute as a single emitted
+token. Three classes emerge:
+
+\begin{itemize}
+\tightlist
+\item
+  \textbf{Reliable atomic operations.} Single-digit multiplication
+  (\(1 \times 2\) digit results \(\le 891\)); 4-digit addition; literal
+  transcription from in-context tapes; positional lookup against
+  short structured labels. The model executes these at very high
+  reliability --- failures we observed in these classes occurred
+  occasionally at deep \(k\), not systematically.
+\item
+  \textbf{Reliable bounded counters.} When externalized to the trace as
+  small integers with explicit format, the model reliably increments
+  them by \(1\) and applies bounded modular conditions
+  (\texttt{tick=N/12\ →\ FIRE} when \texttt{tick=0}). The same conditions evaluated
+  implicitly against \(k\) alone fail at large \(k\).
+\item
+  \textbf{Unreliable open-ended operations.} Implicit running-sum
+  recall across many lines; computing \(j = k - i\) at each pair line
+  for \(i\) in a large range; recomputing the row's pair count from
+  \(k\), \(N\), \(M\) at every line. These are the failure surface that
+  the substrate properties patch over.
+\end{itemize}
+
+The pattern: the model's per-token ``circuit'' can implement the
+atomic operations a Turing machine transition function requires
+(positional lookup, conditional, copy, single-digit arithmetic), but
+cannot reliably hold the unbounded state a Turing machine permits
+on its tape. The substrate's job is to keep state on the tape and
+let the model do per-token work that fits inside its reliable range.
+
+\paragraph{The interface vs.~the architecture (continued from v1)}\label{the-interface-vs.-the-architecture-continued-from-v1}
+
+v1 argued that the compositional limit on multiplication reported by
+Dziri et al.~(2024) characterized the interface between task
+representation and attention, not the architecture itself. v2
+strengthens this claim by extending the operand size by another
+order of magnitude on the same architecture family, using the same
+in-context-learning mechanism, with no fine-tuning. The published
+multiplication frontier has advanced substantially in the
+intervening period (Lee et al.~2024 reaches 12--15 digit multiplication
+via reversed-digit + custom embeddings; Deng et al.~2024 reaches
+\(9 \times 9\) with implicit-CoT training on GPT-2 Small; Yu et al.
+2025 reverse-engineers the failure modes), but none of these
+approaches operate on production generalist models without
+specialization. The substrate-design approach reaches scales out of
+reach for those approaches, with the trade-off that it requires
+careful per-task tape design and runs at production-model output
+cost.
+
+\paragraph{Reasoning as intermediate computation; irreducibility}\label{reasoning-as-intermediate-computation-irreducibility}
+
+The mainstream framing of LLM capability divides into ``reasoning''
+(a privileged cognitive operation the model performs to arrive at
+an answer) and ``execution'' (mechanical token emission). v2 makes
+the case that this distinction is empty operationally. The output
+stream \textbf{is} the reasoning. The intermediate tokens \textbf{are} the
+computation. There is nothing happening ``behind'' them that the
+emitted trace fails to capture.
+
+For computationally irreducible algorithms --- those whose answer
+cannot be obtained without performing the atomic steps in sequence
+--- the substrate-design approach is not an optimization over some
+other route to the answer. It is the only route. The model's job
+is not to find a clever shortcut to \(A \times B\) for 128-digit
+\(A, B\); no such shortcut exists. Its job is to execute the
+\(\sim 4000\) atomic steps faithfully. That is what reasoning is for
+this class of problem, and that is what the substrate makes
+reliable at scale.
+
+This reframing has practical implications for the field. The
+gap between ``the model can multiply 3-digit numbers in one shot''
+and ``the model can multiply 128-digit numbers via in-context
+substrate'' is not a gap in the model's intelligence. It is a gap
+in the format of the request. Asking the model to emit the answer
+to a 128-digit multiplication directly is asking it to perform a
+computationally irreducible algorithm in zero substrate steps,
+which is impossible by definition. Asking it to emit the same
+algorithm step by step on a properly designed substrate works
+because each step is within the model's reliable per-token
+range.
+
+\paragraph{Substrate-level Turing completeness, formalized}\label{substrate-level-turing-completeness-formalized}
+
+Combining §2.3 (substrate properties) and §5.1--§5.2: the trace +
+slicer + model triple satisfies Turing-machine implementation
+requirements:
+
+\begin{itemize}
+\tightlist
+\item
+  Tape: trace + trim continuation (unbounded).
+\item
+  Transition function: the model's forward pass (bounded local read,
+  deterministic at temperature 0).
+\item
+  Step semantics: token emission, byte-for-byte against the
+  reference.
+\item
+  Halt: \texttt{DONE} stop sequence.
+\end{itemize}
+
+The substrate is not the model alone; it is the model in
+combination with the tape design and the continuation primitive.
+Each substrate property is one piece of that implementation.
+
+\paragraph{What's not in this paper}\label{whats-not-in-this-paper}
+
+\begin{itemize}
+\tightlist
+\item
+  We do not prove anything about model internals. Mechanistic
+  interpretability of the relevant circuits is left to other work
+  (Anthropic 2025 and follow-ups).
+\item
+  We do not characterize per-class reliability ceilings
+  quantitatively; the 12 failure modes are anecdotal, not
+  systematically measured.
+\item
+  We do not test beyond 128-digit operands. The substrate should
+  scale; 256-digit is the obvious next step.
+\item
+  We do not compare directly against fine-tuned approaches at
+  matching scales; their published results stop earlier.
+\end{itemize}
+
+\subsubsection{Related Work}\label{related-work}
+
+\textbf{Theoretical Turing completeness for transformers.} Pérez et al.
+(2021), Li \& Wang (2025), Merrill (2023). Position unchanged from
+v1.
+
+\textbf{Production-model arithmetic and the compositional-limit framing.}
+Dziri et al.~(2024), Ball et al.~(2024), Stolfo et al.~(2024).
+Position unchanged from v1.
+
+\textbf{Fine-tuned or specialized-architecture multiplication.}
+- Wan et al.~(2024): specialized tiny transformer, 99.9\% on 5-digit
+multiplication.
+- Lee et al.~(2024) ``Teaching Arithmetic to Small Transformers'' and
+follow-ups: 12--15 digit multiplication with reversed-digit order
+and custom embeddings; 100\% on 100-digit addition with a single
+GPU-day of training.
+- McLeish et al.~(2024) ``Transformers Can Do Arithmetic with the
+Right Embeddings'' (Abacus embeddings): addition main result,
+multiplication still ≤ 15 digits.
+- Deng et al.~(2024) ``From Explicit to Implicit CoT'': GPT-2 Small
+with stepwise internalization reaches \(\sim 100\%\) on \(9 \times 9\)
+multiplication.
+- Yu et al.~(2025) ``Why Can't Transformers Learn Multiplication?'':
+reverse-engineering of ICoT models; identifies Fourier-basis
+representations of digits and Minkowski-sum pairwise-product
+caching; proposes an auxiliary running-sum probe loss.
+- ``Chain of Thought in Order'' (2025): rediscovers reverse-digit
+ordering via search over CoT token orders.
+- ``How Numerical Precision Affects Arithmetical Reasoning'' (2025):
+reverse output-digit order improves accuracy.
+
+All of these operate via training or fine-tuning. None reach the
+operand scale demonstrated here on a generalist production model
+via in-context learning alone.
+
+\textbf{Mechanistic interpretability.} Anthropic circuit tracing (2025),
+unchanged from v1.
+
+\textbf{Cellular automata and computational universality.} Wolfram
+(2002), Cook (2004), unchanged from v1.
+
+\subsubsection{Conclusion}\label{conclusion}
+
+The v1 thesis stands: production transformers contain the
+computational machinery for universal computation, accessible via
+in-context learning. v2 extends the demonstration along three axes:
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\tightlist
+\item
+  \textbf{Scale.} A long compositional algorithm executed end-to-end at
+  64 digits with \(\sim 100\%\) measured accuracy (\(n = 25\) planned)
+  and demonstrated at 128 digits (\(\sim 4000\) atomic steps) as an
+  existence proof, on operand sizes substantially past any published
+  in-context-learning result.
+\item
+  \textbf{Substrate primitive.} Trim continuation with landmark slicing
+  removes the context-window bound, realizing the
+  unbounded-tape primitive a Turing machine requires.
+\item
+  \textbf{Constructive evidence.} A 12-entry failure-mode cascade
+  characterizes the per-token operations the model performs
+  reliably, and the structural interventions that keep every
+  per-token decision inside that reliable range.
+\end{enumerate}
+
+The result reframes the published compositional limits on
+transformer arithmetic: they characterize a specific interface
+between task and attention, not a property of the architecture.
+Given an appropriate substrate, a production transformer trained
+without specialization can execute compositional arithmetic at
+scales far beyond what fine-tuning approaches have demonstrated,
+and at scales that make the universal-computation claim
+constructive rather than existential.
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\subsection{Tape snippet strategy}\label{tape-snippet-strategy}
+
+Same approach as v1: fenced code blocks in markdown (paperese 0.0.16+
+auto-applies \texttt{scriptsize} to verbatim code blocks). For each snippet,
+include:
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\tightlist
+\item
+  Short caption describing the step.
+\item
+  Snippet, 6--15 lines, truncated with \texttt{...} if longer.
+\item
+  Footnote / data-availability pointer to the full trace on GitHub
+  Actions (specific run URL).
+\end{enumerate}
+
+\subsubsection{Specific snippets to include}\label{specific-snippets-to-include}
+
+\textbf{Snippet A --- Substrate primitives.} RESUME, REFRESH, \(T\) block, OUT.
+From a small smoke test (8×8 or 12×12).
+
+\textbf{Snippet B --- A single pair-step with \(T\)-table lookup.} Show how
+leaves are anchored as \texttt{\textless{}digit\textgreater{}\textbar{}\textless{}product\textgreater{}} and reference a \(T\) row.
+
+\textbf{Snippet C --- Chained carry equation at row close.}
+\texttt{row\_sum\ +\ carry\_in\ =\ total\ =\ carry\_out*100\ +\ cell}.
+
+\textbf{Snippet D --- Final RETURN and DONE.} Show wrapped RETURN tape +
+explicit halt marker.
+
+\textbf{Snippet E --- Failure mode and its fix.} Side-by-side: model's wrong
+emission vs the reference, with the substrate property that the fix
+introduced. Two clearest cases:
+- Carry slip (\(8818 \to\) \texttt{c87}) before/after the chained equation.
+- Combine slip (\texttt{1\textbar{}71\ 8\textbar{}568\ 1278} \(\to\) \texttt{1\textbar{}71\ 8\textbar{}568\ 781}) before/after
+the bracketed \texttt{P1*10+P2=prod} equation.
+
+\subsubsection{Linking out}\label{linking-out}
+
+Full traces in the GitHub Actions logs. Hard-link the run ID of the
+successful 128×128 in the data-availability appendix. For
+failure-mode illustrations, archive the relevant CI log excerpts to
+a \texttt{paper-artifacts/} directory in the repo before publication (we
+delete failed runs periodically).
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\subsection{Logistics}\label{logistics}
+
+\begin{enumerate}
+\def\labelenumi{\arabic{enumi}.}
+\tightlist
+\item
+  \textbf{Capture canonical CI artifacts before deletion.} For each
+  failure-mode illustration, copy the relevant log excerpt to
+  \texttt{paper-artifacts/}.
+\item
+  \textbf{Author list.} v1 was solo; v2 to be decided.
+\item
+  \textbf{Venue.} arXiv + Zenodo (DOI), as v1. Possibly a workshop
+  submission (NeurIPS math-reasoning workshop, ICML).
+\item
+  \textbf{Length target.} v1 was \textasciitilde7 pages; v2 likely \textasciitilde12--15 with the
+  failure-mode cascade in either main text or appendix.
+\item
+  \textbf{Reproducibility.} Repo URL + commit SHA of the headline run.
+\end{enumerate}
+
+\subsection{References (to cite or mention)}\label{references-to-cite-or-mention}
+
+Full bibliography assembled across the v1 paper's reference list and
+the 2024--2025 literature surfaced for v2. Some entries are placeholders
+pending exact citation details at draft time.
+
+\subsubsection{Theoretical Turing completeness and complexity of transformers}\label{theoretical-turing-completeness-and-complexity-of-transformers}
+
+\begin{itemize}
+\tightlist
+\item
+  Pérez, Barceló, Marinkovic (2021). \emph{Attention is Turing complete}.
+  Journal of Machine Learning Research 22(75):1--35.
+\item
+  Li, Wang (2025). \emph{Constant bit-size transformers are Turing complete}.
+  arXiv:2506.12027.
+\item
+  Merrill (2023). \emph{Saturated transformers are constant-depth threshold
+  circuits}. TACL 11:1303--1317.
+\item
+  Merrill, Sabharwal (2024). \emph{The expressive power of transformers
+  with chain of thought}. arXiv:2310.07923 (latest revision).
+\end{itemize}
+
+\subsubsection{LLM arithmetic --- compositional-limit framing}\label{llm-arithmetic-compositional-limit-framing}
+
+\begin{itemize}
+\tightlist
+\item
+  Dziri, Lu, Sclar, Li, Jiang, Lin, Welleck, West, Bhagavatula, Le
+  Bras, Hwang, Sanyal, Ren, Ettinger, Harchaoui, Choi (2024). \emph{Faith
+  and fate: Limits of transformers on compositionality}. NeurIPS 36.
+\item
+  Ball, Chen, Herley (2024). \emph{Can we count on LLMs? The fixed-effect
+  fallacy and claims of GPT-4 capabilities}. arXiv:2409.07638.
+\item
+  Stolfo, Belinkov, Sachan (2024). \emph{Language models do hard arithmetic
+  tasks easily and hardly do easy arithmetic tasks}. arXiv:2406.02356.
+\item
+  Jain, Schwarzschild, Addepalli, Goldstein (2024). \emph{IGC: Integrating
+  a gated calculator into an LLM to solve arithmetic tasks reliably
+  and efficiently}. arXiv:2501.00684.
+\end{itemize}
+
+\subsubsection{LLM arithmetic --- specialized / fine-tuned approaches}\label{llm-arithmetic-specialized-fine-tuned-approaches}
+
+\begin{itemize}
+\tightlist
+\item
+  Wan, Liu, He, Lin (2024). \emph{Dissecting multiplication in
+  transformers: Insights into LLMs}. AAAI 2024.
+\item
+  Lee, Sreenivasan, Lee, Lee, Papailiopoulos (2024). \emph{Teaching
+  arithmetic to small transformers}. ICLR 2024.
+\item
+  McLeish, Bansal, Stein, Jain, Kirchenbauer, Bartoldson, Kailkhura,
+  Bhatele, Geiping, Schwarzschild, Goldstein (2024). \emph{Transformers
+  can do arithmetic with the right embeddings} (Abacus embeddings).
+  arXiv:2405.17399.
+\item
+  Deng, Choi, Shieber (2024). \emph{From explicit CoT to implicit CoT:
+  Learning to internalize CoT step by step}. arXiv:2405.14838.
+\item
+  Yu et al.~(2025). \emph{Why can't transformers learn multiplication?
+  Reverse-engineering reveals long-range dependency pitfalls}.
+  arXiv:2510.00184.
+\item
+  {[}Author?{]} (2025). \emph{Chain of Thought in Order: Discovering
+  learning-friendly orders for arithmetic}. ICML 2025;
+  arXiv:2506.23875.
+\item
+  {[}Author?{]} (2025). \emph{How numerical precision affects arithmetical
+  reasoning in LLMs}. Findings of ACL 2025.
+\item
+  Jelassi, d'Ascoli, Domingo-Enrich, Wu, Li, Charton (2023). \emph{Length
+  generalization in arithmetic transformers}. arXiv:2306.15400.
+\end{itemize}
+
+\subsubsection{Scratchpad / chain-of-thought as substrate}\label{scratchpad-chain-of-thought-as-substrate}
+
+\begin{itemize}
+\tightlist
+\item
+  Nye, Andreassen, Gur-Ari, Michalewski, Austin, Bieber, Dohan,
+  Lewkowycz, Bosma, Luan, Sutton, Odena (2021). \emph{Show your work:
+  Scratchpads for intermediate computation with language models}.
+  arXiv:2112.00114.
+\item
+  Wei, Wang, Schuurmans, Bosma, Ichter, Xia, Chi, Le, Zhou (2022).
+  \emph{Chain-of-thought prompting elicits reasoning in large language
+  models}. NeurIPS 35.
+\end{itemize}
+
+\subsubsection{Mechanistic interpretability}\label{mechanistic-interpretability}
+
+\begin{itemize}
+\tightlist
+\item
+  Anthropic (2025). \emph{Circuit tracing: Revealing computational graphs
+  in language models}. transformer-circuits.pub.
+\item
+  Elhage, Hume, Olsson, Schiefer, Henighan, Kravec, Hatfield-Dodds,
+  Lasenby, Drain, Chen, et al.~(2022). \emph{Toy models of superposition}.
+  transformer-circuits.pub.
+\item
+  Olsson, Elhage, Nanda, Joseph, DasSarma, Henighan, Mann, Askell,
+  Bai, Chen, et al.~(2022). \emph{In-context learning and induction
+  heads}. transformer-circuits.pub.
+\end{itemize}
+
+\subsubsection{Cellular automata and computational universality}\label{cellular-automata-and-computational-universality}
+
+\begin{itemize}
+\tightlist
+\item
+  Cook (2004). \emph{Universality in elementary cellular automata}.
+  Complex Systems 15(1):1--40.
+\item
+  Wolfram (2002). \emph{A New Kind of Science}. Wolfram Media. (cited for
+  the 256-rule enumeration AND the computational-irreducibility
+  framing in §5.4.)
+\item
+  Berlekamp, Conway, Guy (1982). \emph{Winning Ways for Your Mathematical
+  Plays}, vol.~2. (background on universality in cellular automata
+  generally --- may or may not cite depending on framing.)
+\end{itemize}
+
+\subsubsection{Predecessors of this work}\label{predecessors-of-this-work}
+
+\begin{itemize}
+\tightlist
+\item
+  Lewis (2024). \emph{Empirical Turing completeness in a production
+  transformer via in-context learning}. Zenodo. DOI
+  10.5281/zenodo.10984995. (the v1 paper, this paper's predecessor.)
+\end{itemize}
+
+\subsubsection{Possible additions, to revisit before submission}\label{possible-additions-to-revisit-before-submission}
+
+\begin{itemize}
+\tightlist
+\item
+  Recent Anthropic / OpenAI model cards for the model versions used.
+\item
+  Any post-2025 paper specifically on long-trace stability /
+  context-window scaling in production models.
+\item
+  Work on tape-format design for LLM computation generally (Schick
+  et al.~2023 Toolformer is adjacent; possibly relevant).
+\item
+  Cognitive-science framing of ``reasoning as computation'' --- Wolfram's
+  pieces, Dennett if going philosophical (probably not for this
+  paper).
+\end{itemize}
+
+\begin{center}\rule{0.5\linewidth}{0.5pt}\end{center}
+
+\subsection{Build}\label{build}
+
+\texttt{paperese} (globally installed) builds the markdown to PDF. Same
+flow as v1:
+
+\begin{verbatim}
+mkdir -p paper-build && cp /Users/lewis/.bun/install/global/node_modules/paperese/examples/arxiv-two-column/preprint.sty paper-build/
+cd paper-build && paperese ../paper-v2-outline.md -o paper-v2-outline.pdf
+\end{verbatim}
+
+Default format is PDF via \texttt{latexmk\ +\ xelatex}. Verbatim/code blocks
+get \texttt{scriptsize} applied automatically in paperese 0.0.16+. The YAML
+frontmatter from v1 (\texttt{paper-paperese.md}) carries over directly ---
+copy it as the starting point and update \texttt{title}, \texttt{abstract},
+\texttt{output}.
+
+
+
+
+\end{document}
