@@ -15,4 +15,3 @@ solution.txt
 .env
 .env.local
 .env.*.local
-paper-build/
