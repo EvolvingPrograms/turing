@@ -115,9 +115,11 @@ export function makeMultiply(chunk: number) {
         // RETURN can transcribe from the most recent OUT tape (recent,
         // bounded attention reach) plus the few cells emitted since,
         // instead of doing a 128-deep attention scan over scattered
-        // `O<k>_..` lines.
+        // `O<k>_..` lines. The range header `O0..O<k-1>` forces a FULL
+        // re-emit semantics — without it the model treats OUT as a
+        // delta from the previous FIRE and skips the early cells.
         if (out.length > 0) {
-          log("OUT")
+          log(`OUT O0..O${out.length - 1}`)
           log(tapeFmt(out, "O"))
         }
         log("END_REFRESH")
