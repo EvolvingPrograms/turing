@@ -171,19 +171,19 @@ export function makeMultiply(chunk: number) {
           const p2 = av * rvLo
           return `: ${rvHi}|${p1} ${rvLo}|${p2} ${p1}*10+${p2}=${prod}`
         }
+        // Uniform pair-line shape: EVERY line ends with an explicit
+        // `prev+prod=newSum` running-sum update, including the first
+        // pair where `prev=0`. The asymmetric "first line ends at =prod"
+        // shape let the model emit a standalone `prod` line trying to
+        // anchor the running sum it couldn't see explicitly.
         while (p < pairs.length) {
           const a = emitProduct(p)
           const aOp = `A${a.i}_${padCell(a.av)}*R${a.t}_${padCell(a.rv)}`
           const aDecomp = `${aOp}${fmtDecomp(a.av, a.rv, a.prod)}`
-          if (p === 0) {
-            sum = a.prod
-            log(`[${a.i}/${iLast}] ${aDecomp}`)
-          } else {
-            const prev = sum
-            const newSum = prev + a.prod
-            log(`[${a.i}/${iLast}] ${aDecomp} ${prev}+${a.prod}=${newSum}`)
-            sum = newSum
-          }
+          const prev = sum
+          const newSum = prev + a.prod
+          log(`[${a.i}/${iLast}] ${aDecomp} ${prev}+${a.prod}=${newSum}`)
+          sum = newSum
           p += 1
         }
       }
