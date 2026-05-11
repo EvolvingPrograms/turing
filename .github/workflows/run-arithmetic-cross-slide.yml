@@ -1,4 +1,5 @@
 name: Run arithmetic-cross-slide
+run-name: "[${{ inputs.model }}] cross-slide ${{ inputs.digits_a }}x${{ inputs.digits_b }} chunk=${{ inputs.chunk }}${{ inputs.from && format(' from=k{0}', inputs.from) || '' }}"
 
 on:
   workflow_dispatch:

@@ -1,4 +1,5 @@
 name: Run arithmetic-cross (cross-memo)
+run-name: "[${{ inputs.model }}] cross-memo ${{ inputs.digits_a }}x${{ inputs.digits_b }} chunk=${{ inputs.chunk }}"
 
 on:
   workflow_dispatch:

@@ -1,4 +1,5 @@
 name: Run program
+run-name: "[${{ inputs.model }}] ${{ inputs.program }} ${{ inputs.extra }} ${{ inputs.flags }}"
 
 on:
   workflow_dispatch:
