@@ -34,6 +34,7 @@ export function sliceContinuationPrefill(
     ? continueBoundary.flags
     : continueBoundary.flags + "g"
   const re = new RegExp(continueBoundary.source, flags)
+  let firstMatch = -1
   let lastMatch = -1
   for (const m of fullTrace.matchAll(re)) {
     const idx = m.index ?? -1
@@ -42,9 +43,35 @@ export function sliceContinuationPrefill(
       const after = idx + m[0].length
       if (fullTrace.indexOf(continueAnchor, after) === -1) continue
     }
+    if (firstMatch < 0) firstMatch = idx
     lastMatch = idx
   }
-  return lastMatch >= 0 ? fullTrace.slice(lastMatch) : completed
+  if (lastMatch < 0) return completed
+
+  // Prefill structure:
+  //   <trace prelude — everything BEFORE the first qualifying boundary>
+  //   <HISTORY_TRUNCATED>
+  //   <slice from lastMatch onward>
+  //
+  // The prelude (e.g. `CHUNK=2` for cross-slide) is whatever sits at
+  // the head of the actual trace before the first boundary line. It
+  // satisfies the model's "trace begins with X" in-context prior —
+  // without it the model on resume fell back to re-emitting the
+  // first token (`CHUNK`, previously `START`) mid-trace. The marker
+  // line `<HISTORY_TRUNCATED>` is uppercase-angle-tag, a shape that
+  // never appears in the training trace itself, so the model never
+  // has to learn whether to emit it — its sole role is in-context
+  // signal that omitted content existed between prelude and slice.
+  //
+  // If there's no prelude (firstMatch at index 0) or no truncation
+  // (firstMatch === lastMatch — only one qualifying boundary), no
+  // injection is needed; just return the slice.
+  if (firstMatch === 0 || firstMatch === lastMatch) {
+    return fullTrace.slice(lastMatch)
+  }
+  const prelude = fullTrace.slice(0, firstMatch)
+  const slice = fullTrace.slice(lastMatch)
+  return `${prelude}<HISTORY_TRUNCATED>\n${slice}`
 }
 
 export async function testWithClaude({

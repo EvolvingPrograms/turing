@@ -112,6 +112,27 @@ test("continueAnchor accepts the latest boundary when its step completed", () =>
   expect(result.includes("FIRE k=0")).toBe(false)
 })
 
+test("prelude before first boundary is injected with <HISTORY_TRUNCATED> marker", () => {
+  // Trace begins with a prelude line (e.g. CHUNK=2) BEFORE the first
+  // boundary. When trimming, the prelude is preserved at the head of
+  // the prefill with a truncation marker so the model's "trace
+  // begins with X" prior is satisfied without re-sending the omitted
+  // middle.
+  const fullTrace =
+    "CHUNK=2\n" +
+    "FIRE k=0\nREFRESH\nA\nEND_REFRESH\nO0\n" +
+    "FIRE k=8\nREFRESH\nA\nEND_REFRESH\nrowwork\n"
+  const completed = "FIRE k=8\nREFRESH\nA\nEND_REFRESH\nrowwork\n"
+  const result = sliceContinuationPrefill(
+    fullTrace,
+    completed,
+    /^FIRE k=\d+/m,
+    "END_REFRESH"
+  )
+  expect(result.startsWith("CHUNK=2\n<HISTORY_TRUNCATED>\nFIRE k=8")).toBe(true)
+  expect(result.endsWith("rowwork\n")).toBe(true)
+})
+
 test("continueAnchor falls back to completed when no boundary qualifies", () => {
   // First FIRE in trace, REFRESH not yet finished → no qualifying
   // boundary. Falls back to `completed`.

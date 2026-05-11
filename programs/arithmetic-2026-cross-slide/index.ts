@@ -107,6 +107,15 @@ await runProgram(defineProgram({
     ["1234", "5678"],
     ["123456", "789012"],
     ["13579246", "8642"],
+    // 48-digit × 48-digit (24 cells each at chunk=2). N+M-1 = 47, so
+    // FIREs occur at k=0, k=12, k=24, k=36 — FOUR FIREs / THREE
+    // non-empty OUT blocks. OUT sizes grow 12 → 24 → 36, all starting
+    // at O0. This drills the cumulative-OUT semantics across more
+    // transitions than the 34-digit example alone; at deep k of a
+    // 128-digit inference run the model was treating OUT as a delta
+    // from the previous FIRE (writing `OUT O96..O107` instead of
+    // `OUT O0..O107`) — a stronger in-training pattern fixes that.
+    ["123456789012345678901234567890123456789012345678", "987654321098765432109876543210987654321098765432"],
     // 34-digit × 34-digit (17 cells each at chunk=2). N+M-1 = 33, so
     // FIREs occur at k=0, k=16, k=32 — TWO non-empty OUT blocks. The
     // k=32 OUT has cells O0..O31 (32 cells); the k=16 OUT has O0..O15
