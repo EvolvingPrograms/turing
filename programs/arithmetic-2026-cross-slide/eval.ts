@@ -173,14 +173,14 @@ export function makeMultiply(chunk: number) {
         }
         // Pair-line shape: each line starts with `A_i_..*R_..` (no
         // leading `[i/iLast]` — the A_i index is the position) and
-        // ends with the `[iLast]` sentinel. The sentinel does two
+        // ends with the `[/iLast]` sentinel. The sentinel does two
         // jobs:
-        //  - terminator: after `... newSum [iLast]\n` the next
+        //  - terminator: after `... newSum [/iLast]\n` the next
         //    line MUST be either `A_(i+1)_..` (continue) or
         //    `sum+c=...` (row close). Standalone equations between
         //    pair lines (a recap-drift failure we saw) have no
         //    natural completion that fits this pattern.
-        //  - row-end anchor: the iLast value inside `[iLast]` is
+        //  - row-end anchor: the iLast value inside `[/iLast]` is
         //    the bound the model compares A_i against to know it's
         //    the last pair.
         while (p < pairs.length) {
@@ -189,7 +189,7 @@ export function makeMultiply(chunk: number) {
           const aDecomp = `${aOp}${fmtDecomp(a.av, a.rv, a.prod)}`
           const prev = sum
           const newSum = prev + a.prod
-          log(`${aDecomp} ${prev}+${a.prod}=${newSum} [${iLast}]`)
+          log(`${aDecomp} ${prev}+${a.prod}=${newSum} [/${iLast}]`)
           sum = newSum
           p += 1
         }
