@@ -101,15 +101,15 @@ await runProgram(defineProgram({
     ["1234", "5678"],
     ["123456", "789012"],
     ["13579246", "8642"],
-    ["1234567890", "9876543210"],
-    ["12345678901234567890", "98765432109876543210"],
     // 34-digit × 34-digit (17 cells each at chunk=2). N+M-1 = 33, so
     // FIREs occur at k=0, k=16, k=32 — TWO non-empty OUT blocks. The
-    // k=32 OUT has cells O0..O31 (32 cells); the k=16 OUT had O0..O15
+    // k=32 OUT has cells O0..O31 (32 cells); the k=16 OUT has O0..O15
     // (16 cells). This is the only place in training where the model
     // sees OUT growing cumulatively across consecutive FIREs; without
     // it, the model treats OUT at k=32 of an inference run as a delta
-    // (`OUT O16..O31`) instead of the full cumulative tape.
+    // (`OUT O16..O31`) instead of the full cumulative tape. Covers
+    // every multi-line tape / multi-FIRE scenario that the prior
+    // 20-digit example covered, plus the cumulative-OUT scenario.
     ["1234567890123456789012345678901234", "9876543210987654321098765432109876"],
   ],
   generateTestInputs: (opts) => {
