@@ -88,6 +88,7 @@ export async function testWithModel({
   // are gated by these flags; everything else is provider-agnostic.
   const isAnthropic = typeof model === "string" && model.startsWith("anthropic/")
   const isOpenAI = typeof model === "string" && model.startsWith("openai/")
+  const isDeepSeek = typeof model === "string" && model.startsWith("deepseek/")
 
   // Warm-start: pre-populate fullTrace and derive lastChunk via the
   // slicer so the first API call already sends an assistant prefill +
@@ -121,6 +122,7 @@ export async function testWithModel({
     gateway: { caching: "auto" as const },
     ...(isAnthropic && { anthropic: { thinking: { type: "disabled" as const } } }),
     ...(isOpenAI && { openai: { reasoningEffort: reasoningEffort ?? "none" } }),
+    ...(isDeepSeek && { deepseek: { thinking: { type: "disabled" as const } } }),
   }
 
   while (true) {
