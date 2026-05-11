@@ -227,20 +227,12 @@ export function makeMultiply(chunk: number) {
     }
 
     log(`CHUNK=${chunk}`)
-    // Model writes its own multiplication table T for the A cells.
-    // Each row: `A_i_av: 0|0 1|av 2|2av ... 9|9av` — ten 1d×2d products
-    // emitted once, then referenced by pair-line leaves throughout the
-    // trace. The model does the 640 mental products here, where the
-    // attention context is fresh, rather than scattered across thousands
-    // of pair lines. Subsequent decomp leaves `<digit>|<product>` are
-    // lookups against this self-written table.
-    log("T:")
-    for (let i = 0; i < tapeA.length; i++) {
-      const av = tapeA[i]
-      const entries: string[] = []
-      for (let d = 0; d <= 9; d++) entries.push(`${d}|${av * d}`)
-      log(`A${i}_${padCell(av)}: ${entries.join(" ")}`)
-    }
+    // Memoization table T removed: the pair-line decomp leaves
+    // (`<digit>|<product>`) are 1d×2d products the model does
+    // reliably in-line. The table was only visible to the very
+    // first chunk anyway — trim-mode continuations slice from the
+    // first FIRE, dropping the body of T from the assistant prefill.
+    // Testing whether removing it degrades reliability.
     const productTape = multiplySlide(tapeA, tapeB, log)
 
     log(`RETURN ${tapeFmt(productTape, "O")}`)
