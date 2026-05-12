@@ -18,6 +18,7 @@ on:
           - arithmetic-2026-karatsuba
           - arithmetic-2026-kara-memo
           - automata
+          - game-of-life
           - ab
           - sha256
       model:

@@ -24,36 +24,77 @@ import type { ModelTestOptions, TestResult } from "./types"
  * actual first line (e.g. `CHUNK=2` + memoization table) without
  * needing to re-send the omitted middle.
  */
+/**
+ * Build the continuation prefill by slicing the full trace at the
+ * start of one of the most recent *complete* steps. A step is a
+ * region between a `continueStart` match and a `continueEnd` match
+ * appearing later in the trace. The slice point is the start of the
+ * Nth-from-the-end complete step (default N=1).
+ *
+ * Prelude: everything up to the algorithmic-header end, defined as
+ * the earlier of (first start match, first end match). The
+ * `<HISTORY_TRUNCATED>` marker separates prelude from slice when
+ * there is content in between to elide.
+ */
 export function sliceContinuationPrefill(
   fullTrace: string,
   completed: string,
-  continueBoundary: RegExp | undefined,
-  continueAnchor?: string
+  continueStart: RegExp | undefined,
+  continueEnd?: string | RegExp,
+  continueWindow: number = 1
 ): string {
-  if (!continueBoundary) return completed
-  const flags = continueBoundary.flags.includes("g")
-    ? continueBoundary.flags
-    : continueBoundary.flags + "g"
-  const re = new RegExp(continueBoundary.source, flags)
-  let firstMatch = -1
-  let lastMatch = -1
-  for (const m of fullTrace.matchAll(re)) {
-    const idx = m.index ?? -1
-    if (idx < 0) continue
-    if (continueAnchor) {
-      const after = idx + m[0].length
-      if (fullTrace.indexOf(continueAnchor, after) === -1) continue
+  if (!continueStart) return completed
+  if (continueWindow < 1) continueWindow = 1
+  // Collect all `start` matches that are followed by an `end` match.
+  const startRe = withGlobalFlag(continueStart)
+  const starts: number[] = []
+  for (const m of fullTrace.matchAll(startRe)) {
+    if (m.index === undefined) continue
+    if (continueEnd !== undefined) {
+      const after = m.index + m[0].length
+      if (indexAfter(fullTrace, continueEnd, after) < 0) continue
     }
-    if (firstMatch < 0) firstMatch = idx
-    lastMatch = idx
+    starts.push(m.index)
   }
-  if (lastMatch < 0) return completed
-  if (firstMatch === 0 || firstMatch === lastMatch) {
-    return fullTrace.slice(lastMatch)
+  // Fewer than `continueWindow` complete steps in the trace —
+  // return the full trace. The slicer only trims when we have at
+  // least N complete sections; otherwise we'd be cutting before
+  // the model has even produced the required count.
+  if (starts.length < continueWindow) return fullTrace
+  // Slice point: Nth from the end.
+  const sliceStart = starts[starts.length - continueWindow]
+  // Prelude end: the earlier of (first start match, first end match).
+  // For GoL (start=NEW GRID, end=STEP): first end (STEP 0→1) comes
+  // before first start, so prelude = before STEP 0→1 (just header).
+  // For cross-slide (start=RESUME, end=END_REFRESH): first start
+  // comes before first end, so prelude = before first RESUME
+  // (just CHUNK= + T table).
+  const firstStart = starts[0]
+  const firstEnd = continueEnd !== undefined ? firstIndexOf(fullTrace, continueEnd) : -1
+  const preludeEnd = firstEnd >= 0 && firstEnd < firstStart ? firstEnd : firstStart
+  if (preludeEnd === 0 || preludeEnd >= sliceStart) {
+    return fullTrace.slice(sliceStart)
   }
-  const prelude = fullTrace.slice(0, firstMatch)
-  const slice = fullTrace.slice(lastMatch)
-  return `${prelude}<HISTORY_TRUNCATED>\n${slice}`
+  return `${fullTrace.slice(0, preludeEnd)}<HISTORY_TRUNCATED>\n${fullTrace.slice(sliceStart)}`
+}
+
+function withGlobalFlag(re: RegExp): RegExp {
+  const flags = re.flags.includes("g") ? re.flags : re.flags + "g"
+  return new RegExp(re.source, flags)
+}
+
+function firstIndexOf(s: string, pattern: string | RegExp): number {
+  if (typeof pattern === "string") return s.indexOf(pattern)
+  const m = withGlobalFlag(pattern).exec(s)
+  return m && m.index !== undefined ? m.index : -1
+}
+
+function indexAfter(s: string, pattern: string | RegExp, from: number): number {
+  if (typeof pattern === "string") return s.indexOf(pattern, from)
+  const re = withGlobalFlag(pattern)
+  re.lastIndex = from
+  const m = re.exec(s)
+  return m && m.index !== undefined ? m.index : -1
 }
 
 /**
@@ -110,12 +151,14 @@ export async function testWithModel({
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   startToken: _startToken,
   solution,
-  continueBoundary,
-  continueAnchor,
+  continueStart,
+  continueEnd,
+  continueWindow = 1,
   continuationMode = "trim",
   warmPrefill,
   stopSequences,
   reasoningEffort,
+  onContinuation,
 }: ModelTestOptions): Promise<TestResult> {
   let responseCount = 0
   let runUsage = zeroUsage()
@@ -129,7 +172,7 @@ export async function testWithModel({
   // CONTINUE, exactly as if a prior call had overflowed.
   let fullTrace = warmPrefill ?? ""
   let lastChunk = warmPrefill
-    ? sliceContinuationPrefill(fullTrace, fullTrace, continueBoundary, continueAnchor)
+    ? sliceContinuationPrefill(fullTrace, fullTrace, continueStart, continueEnd, continueWindow)
     : ""
   const stackedMessages: ModelMessage[] = [...messages]
 
@@ -238,7 +281,10 @@ export async function testWithModel({
           { role: "user", content: "CONTINUE" }
         )
       } else {
-        lastChunk = sliceContinuationPrefill(fullTrace, completed, continueBoundary, continueAnchor)
+        lastChunk = sliceContinuationPrefill(fullTrace, completed, continueStart, continueEnd, continueWindow)
+        if (onContinuation) {
+          await onContinuation(responseCount + 1, lastChunk)
+        }
       }
 
       console.log("\n")
@@ -251,9 +297,35 @@ export async function testWithModel({
       continue
     }
 
+    // Final completeness check: streamed output is the model's text
+    // minus any stop sequence that fired (stop sequences are stripped
+    // by the provider). Compare against the solution truncated at
+    // its first stop sequence — so the trace must match end-to-end
+    // up to (but not including) the stop token.
+    const finalOutput = fullTrace + text
+    let cmpSolution = solution
+    if (stopSequences && stopSequences.length > 0) {
+      let earliest = cmpSolution.length
+      for (const stop of stopSequences) {
+        const idx = cmpSolution.indexOf(stop)
+        if (idx >= 0 && idx < earliest) earliest = idx
+      }
+      cmpSolution = cmpSolution.slice(0, earliest)
+    }
+    if (finalOutput.trim() !== cmpSolution.trim()) {
+      console.log()
+      console.log(chalk.bold(chalk.red("INCORRECT")))
+      console.log(chalk.red(`Output finished early (finishReason=${finishReason}); ${finalOutput.trim().length} chars vs solution ${cmpSolution.trim().length} chars.`))
+      return {
+        pass: false,
+        text: finalOutput,
+        metadata: { finishReason, usage: runUsage, chunks: chunkUsages },
+      }
+    }
+
     return {
       pass: true,
-      text: fullTrace + text,
+      text: finalOutput,
       metadata: { finishReason, usage: runUsage, chunks: chunkUsages },
     }
   }

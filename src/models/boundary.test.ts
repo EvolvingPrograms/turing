@@ -62,11 +62,16 @@ test("boundary regex without /m still matches at line start via source", () => {
   expect(result).toBe("tick=1\nbar\n")
 })
 
-test("boundary regex with no match → falls back to completed chunk", () => {
-  const fullTrace = "no boundary in here\nstill nothing\n"
-  const completed = "still nothing\n"
+test("boundary regex with no match → falls back to full trace", () => {
+  // When the boundary is defined but hasn't matched yet (still
+  // streaming the first STEP/segment), the slicer must return the
+  // full trace so the model keeps the header (and prior chunks) in
+  // scope. Returning just `completed` here strips the header from
+  // chunk 2+ and the model bails to a fresh response.
+  const fullTrace = "RULE B3/S23\nrow0\nrow1\nrow2\nrow3\n"
+  const completed = "row3\n"
   const result = sliceContinuationPrefill(fullTrace, completed, /^tick=/m)
-  expect(result).toBe(completed)
+  expect(result).toBe(fullTrace)
 })
 
 test("global flag on caller regex is preserved without duplication", () => {
@@ -112,14 +117,13 @@ test("continueAnchor accepts the latest boundary when its step completed", () =>
   expect(result.includes("FIRE k=0")).toBe(false)
 })
 
-test("prelude before first boundary is injected with <HISTORY_TRUNCATED> marker", () => {
-  // Trace begins with a prelude line (e.g. CHUNK=2) BEFORE the first
-  // boundary. When trimming, the prelude is preserved at the head of
-  // the prefill with a truncation marker so the model's "trace
-  // begins with X" prior is satisfied without re-sending the omitted
-  // middle.
+test("prelude defaults to everything before first boundary match", () => {
+  // With no continuePrelude regex, the slicer falls back to using
+  // the first boundary match as the prelude end. Multi-match case:
+  // prelude = before first FIRE; slice = from last FIRE.
   const fullTrace =
     "CHUNK=2\n" +
+    "T0=...\n" +
     "FIRE k=0\nREFRESH\nA\nEND_REFRESH\nO0\n" +
     "FIRE k=8\nREFRESH\nA\nEND_REFRESH\nrowwork\n"
   const completed = "FIRE k=8\nREFRESH\nA\nEND_REFRESH\nrowwork\n"
@@ -129,8 +133,104 @@ test("prelude before first boundary is injected with <HISTORY_TRUNCATED> marker"
     /^FIRE k=\d+/m,
     "END_REFRESH"
   )
-  expect(result.startsWith("CHUNK=2\n<HISTORY_TRUNCATED>\nFIRE k=8")).toBe(true)
+  expect(result.startsWith("CHUNK=2\nT0=...\n<HISTORY_TRUNCATED>\nFIRE k=8")).toBe(true)
   expect(result.endsWith("rowwork\n")).toBe(true)
+  // FIRE k=0's content (everything between first and last match) is
+  // the truncated middle.
+  expect(result.includes("FIRE k=0")).toBe(false)
+})
+
+test("start/end pair: header ends at the earlier of first-start or first-end", () => {
+  // GoL: start=NEW GRID, end=STEP. The first STEP appears *before*
+  // the first NEW GRID, so prelude end = first STEP position. The
+  // prelude is everything before STEP 0→1 (header + initial grid).
+  // The slice is from the most recent qualifying NEW GRID.
+  const fullTrace =
+    "RULE B3/S23\n" +
+    "LOOKUP\n" +
+    "BOUNDARY dead\n" +
+    "GRID 0/2\n" +
+    "00,00░ 00,01░\n" +
+    "STEP 0→1\n" +
+    "00,00░: ░ ░ ░ ░ ░ ░ ░ ░ =0 dead+0→░\n" +
+    "NEW GRID 1/2\n" +
+    "00,00░ 00,01░\n" +
+    "STEP 1→2\n" +
+    "00,00░: ░ ░ ░"
+  const completed = "STEP 1→2\n00,00░: ░ ░ ░\n"
+  const result = sliceContinuationPrefill(
+    fullTrace,
+    completed,
+    /^NEW GRID \d+\/\d+$/m,
+    "STEP "
+  )
+  expect(result.startsWith("RULE B3/S23\nLOOKUP\nBOUNDARY dead\nGRID 0/2\n00,00░ 00,01░\n<HISTORY_TRUNCATED>\nNEW GRID 1/2")).toBe(true)
+  // STEP 0→1's cells were in the truncated middle.
+  expect(result.includes("=0 dead+0→░")).toBe(false)
+})
+
+test("fewer complete steps than continueWindow → return full trace", () => {
+  // Only 1 qualifying NEW GRID exists but window=2 — the slicer
+  // can't honor the request, so it returns the full trace instead
+  // of trimming with what's available.
+  const fullTrace =
+    "header\n" +
+    "STEP 0→1\nA\nB\n" +
+    "NEW GRID 1/3\n" +
+    "STEP 1→2\nC\n"
+  const completed = "STEP 1→2\nC\n"
+  const result = sliceContinuationPrefill(
+    fullTrace,
+    completed,
+    /^NEW GRID \d+\/\d+$/m,
+    "STEP ",
+    2
+  )
+  expect(result).toBe(fullTrace)
+})
+
+test("no qualifying start (no NEW GRID yet) → return full trace", () => {
+  const fullTrace =
+    "RULE B3/S23\n" +
+    "GRID 0/2\n" +
+    "STEP 0→1\n" +
+    "00,00░: ░ ░ ░ ░\n"
+  const completed = "STEP 0→1\n00,00░: ░ ░ ░ ░\n"
+  const result = sliceContinuationPrefill(
+    fullTrace,
+    completed,
+    /^NEW GRID \d+\/\d+$/m,
+    "STEP "
+  )
+  expect(result).toBe(fullTrace)
+})
+
+test("continueWindow > 1 includes additional complete steps", () => {
+  // Cross-slide-style: start before end. With N=2, the slice starts
+  // at the *second-to-last* qualifying start so the prefill carries
+  // a full previous step as pattern reference.
+  const fullTrace =
+    "header\n" +
+    "RESUME k=0\nrefresh\nEND_REFRESH\nA\n" +
+    "RESUME k=1\nrefresh\nEND_REFRESH\nB\n" +
+    "RESUME k=2\nrefresh\nEND_REFRESH\nC\n"
+  const completed = "RESUME k=2\nrefresh\nEND_REFRESH\nC\n"
+  const result = sliceContinuationPrefill(
+    fullTrace,
+    completed,
+    /^RESUME k=\d+/m,
+    "END_REFRESH",
+    2  // include last 2 complete steps
+  )
+  // Slice starts at RESUME k=1 (one back from k=2). Prelude is
+  // before first start (header\n) — first start comes before first
+  // end here, so prelude end = first RESUME position.
+  expect(result.startsWith("header\n<HISTORY_TRUNCATED>\nRESUME k=1")).toBe(true)
+  // k=0's body is truncated.
+  expect(result.includes("\nA\n")).toBe(false)
+  // k=1 and k=2 both present.
+  expect(result.includes("RESUME k=1")).toBe(true)
+  expect(result.includes("RESUME k=2")).toBe(true)
 })
 
 test("continueAnchor falls back to completed when no boundary qualifies", () => {

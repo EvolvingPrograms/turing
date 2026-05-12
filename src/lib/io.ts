@@ -24,8 +24,9 @@ export function encodeArgs<Args extends readonly string[]>(
 
 /**
  * Generate the full training-tape text for a program by running every
- * training input through program.evaluate and stitching [USER]/[ASSISTANT]
- * blocks. Returns the tape as a string (does not write to disk).
+ * training input through program.evaluate and stitching XML-tagged
+ * `<USER>`/`<ASSISTANT>` blocks. Returns the tape as a string
+ * (does not write to disk).
  */
 export async function formatTrainingTape<Args extends readonly string[]>(
   program: Program<Args>
@@ -34,7 +35,7 @@ export async function formatTrainingTape<Args extends readonly string[]>(
   for (const args of program.trainingInputs) {
     const trace = await program.evaluate(...args)
     const user = encodeArgs(program, args)
-    blocks.push(`[USER]\n${user}\n\n[ASSISTANT]\n${trace}\n\n`)
+    blocks.push(`<USER>\n${user}\n</USER>\n<ASSISTANT>\n${trace}\n</ASSISTANT>\n\n`)
   }
   return blocks.join("")
 }

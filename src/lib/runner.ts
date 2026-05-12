@@ -261,16 +261,23 @@ export async function runProgram<Args extends readonly string[]>(
         console.log()
         console.log(chalk.dim(`Starting worker ${worker}...`))
 
+        const programDir = resolve(process.cwd(), "programs", program.name)
         const result = await startTest({
           system: systemContent,
           startToken,
           messages,
           solution,
-          continueBoundary: program.continueBoundary,
-          continueAnchor: program.continueAnchor,
+          continueStart: program.continueStart,
+          continueEnd: program.continueEnd,
+          continueWindow: program.continueWindow,
           continuationMode: program.continuationMode,
           warmPrefill,
           stopSequences: program.config.stopSequences,
+          ...(debug ? {
+            onContinuation: async (_chunkN: number, prefill: string) => {
+              await Bun.write(resolve(programDir, "continue.txt"), prefill)
+            },
+          } : {}),
           ...params,
         })
 

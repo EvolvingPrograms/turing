@@ -59,7 +59,7 @@ await runProgram(defineProgram({
   // RESUME line + `[i/n]` labels give the model enough frame to continue
   // from a short prefill. See cross-memo/index.ts for the rationale.
   continuationMode: "trim",
-  continueBoundary: /^tick=\d+ \[FIRE\]/m,
+  continueStart: /^tick=\d+ \[FIRE\]/m,
   trainingInputs: [
     // Sub-threshold: triggers pure cross-memo path (no Karatsuba).
     // These demonstrate the cross-memo base case.

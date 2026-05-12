@@ -46,20 +46,21 @@ export interface Program<Args extends readonly string[] = string[]> {
   /** Optional: human-friendly representation of one arg for the run banner table
    *  (e.g. decimal for a hex arg). Receives the raw arg string and its index. */
   display?: (arg: string, index: number) => string
-  /** Optional: regex marking the start of an atomic step in the trace.
-   *  On overflow / continuation, the assistant prefill is sliced from the
-   *  last match in the full trace — so the model always resumes with a
-   *  complete in-flight step in context, even when the cut landed mid-step.
-   *  Must be a multiline (`m` flag) regex that matches at line start.
-   *  Only consulted when continuationMode === "trim". */
-  continueBoundary?: RegExp
-  /** Optional anchor string used together with `continueBoundary`. A
-   *  boundary match only qualifies as a slice point when this string
-   *  appears later in the trace. Prevents slicing into an in-progress
-   *  step (e.g. a FIRE row whose REFRESH block hasn't finished
-   *  emitting yet); the slicer backs up to the previous qualifying
-   *  boundary in that case. */
-  continueAnchor?: string
+  /** Regex marking the start of a step in the trace (the slice
+   *  point). On overflow + trim continuation, the prefill is
+   *  sliced at the start of one of the most recent complete steps.
+   *  Must be a multiline (`m` flag) regex that matches at line start. */
+  continueStart?: RegExp
+  /** Pattern (string or regex) marking the end of a step. A start
+   *  qualifies as complete only when a matching end appears later
+   *  in the trace. The earlier of (first start, first end)
+   *  automatically defines where the algorithmic header ends —
+   *  the prelude is everything before that. */
+  continueEnd?: string | RegExp
+  /** Number of complete steps to include in the prefill. Default 1
+   *  (the most recent complete step). Must be >= 1; values below
+   *  clamp to 1. */
+  continueWindow?: number
   /** How to assemble messages across overflow continuations.
    *
    *  - "trim" (default): replace the assistant prefill each continuation

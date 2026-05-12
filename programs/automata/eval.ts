@@ -64,8 +64,8 @@ export default function testAutomata(
   const states: Tape[] = [initialState]
 
   if (!silent) {
-    console.log(`\n[USER]\n${formatTape(state)}\n${ruleNumber}\n${generations}`)
-    console.log("\n[ASSISTANT]")
+    console.log(`\n<USER>\n${formatTape(state)}\n${ruleNumber}\n${generations}`)
+    console.log("</USER>\n<ASSISTANT>")
   }
   log(`START: MAX ${generations}`)
   log(formatTape(state))

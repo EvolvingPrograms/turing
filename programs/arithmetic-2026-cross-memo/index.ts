@@ -57,8 +57,8 @@ await runProgram(defineProgram({
   // the model re-establish frame from a short prefill alone — no need to
   // keep the entire prior conversation in context (stack mode).
   continuationMode: "trim",
-  continueBoundary: /^RESUME k=\d+ tick=0\/\d+ FIRE /m,
-  continueAnchor: "END_REFRESH",
+  continueStart: /^RESUME k=\d+ tick=0\/\d+ FIRE /m,
+  continueEnd: "END_REFRESH",
   postTest: (args, trace) => {
     const [aStr, bStr] = args
     const expected = BigInt(aStr) * BigInt(bStr)

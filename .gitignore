@@ -6,6 +6,16 @@ nuclear_experiments/
 richard_bread/
 snk_real_ending/
 
+paper-paperese.md
+paper-v2-outline.md
+ideas.md
+paper-build/
+
+# game-of-life debug artifacts
+programs/game-of-life/continue.txt
+programs/game-of-life/train.txt
+programs/game-of-life/tests.jsonl
+
 error.txt
 service-account.json
 logs
@@ -15,4 +25,3 @@ solution.txt
 .env
 .env.local
 .env.*.local
-paper-build/

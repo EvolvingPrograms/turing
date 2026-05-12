@@ -24,15 +24,18 @@ export interface ModelTestOptions {
   main?: boolean;
   solution: string;
   startToken: string | null;
-  /** Optional regex marking step boundaries. On overflow, the assistant
-   *  prefill for the continuation is sliced from the last match in the
-   *  full trace so the model resumes inside a complete step.
-   *  Only used when continuationMode === "trim". */
-  continueBoundary?: RegExp;
-  /** Optional anchor string. A boundary match only qualifies when this
-   *  string appears in the trace AFTER the match — used to avoid
-   *  slicing into an in-progress step. */
-  continueAnchor?: string;
+  /** Regex marking the start of a step (the slice point). On
+   *  overflow, the prefill is sliced at the start of one of the
+   *  most recent complete steps. */
+  continueStart?: RegExp;
+  /** Pattern (string or regex) marking the end of a step. A start
+   *  qualifies as complete only when a matching end appears later
+   *  in the trace. The earlier of (first start, first end)
+   *  determines where the algorithmic header ends. */
+  continueEnd?: string | RegExp;
+  /** Number of complete steps to include in the prefill. Default 1
+   *  (most recent). Must be >= 1; values below clamp to 1. */
+  continueWindow?: number;
   /** "trim": replace assistant prefill each call (sliced).
    *  "stack": append each completed chunk as its own assistant message. */
   continuationMode?: "trim" | "stack";
@@ -42,6 +45,11 @@ export interface ModelTestOptions {
   warmPrefill?: string;
   /** Stop sequences passed to the API. */
   stopSequences?: string[];
+  /** Optional callback invoked each time a continuation prefill is
+   *  built. Used in --debug mode to dump the slicer's output to
+   *  disk so the human can see exactly what the model receives on
+   *  resume. */
+  onContinuation?: (chunkN: number, prefill: string) => void | Promise<void>;
   /** OpenAI reasoning models: effort level. Defaults to "none" for
    *  deterministic-trace tasks where the model is transcribing/computing
    *  rather than reasoning. Valid: "none" | "low" | "medium" | "high" | "xhigh". */
